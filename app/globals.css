@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F8F5F0; /* Off-white / Cream */
-  --foreground: #2C2C2C; /* Charcoal */
-  --terracotta: #C86B5E; /* Earthy Terracotta */
-  --terracotta-dark: #A95A4F;
-  --surface: #FFFFFF;
-  --surface-alt: #F0ECE4;
-  --border: #E5E0D8;
+  --background: #f8fafc; /* slate-50 */
+  --foreground: #0f172a; /* slate-900 */
+  --accent: #2563eb; /* blue-600 */
+  --accent-dark: #1d4ed8; /* blue-700 */
+  --surface: #ffffff;
+  --surface-alt: #f1f5f9; /* slate-100 */
+  --border: #e2e8f0; /* slate-200 */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-terracotta: var(--terracotta);
-  --color-terracotta-dark: var(--terracotta-dark);
+  --color-accent: var(--accent);
+  --color-accent-dark: var(--accent-dark);
   --color-surface: var(--surface);
   --color-surface-alt: var(--surface-alt);
   --color-border: var(--border);
   
-  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-playfair), ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
