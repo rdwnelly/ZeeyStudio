@@ -18,7 +18,11 @@ type Project = {
   maxPhotos: number;
   createdAt: string;
   driveFolderId?: string;
-  status?: 'Menunggu Pemilihan' | 'Selesai';
+  status?: string;
+  packagePrice?: number;
+  packageName?: string;
+  dpAmount?: number;
+  pendingPayment?: { orderId: string; amount: number; createdAt: string };
 };
 
 type Photo = {
