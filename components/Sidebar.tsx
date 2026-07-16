@@ -1,28 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   const pathname = usePathname();
+  const router = useRouter();
 
-  const navItems = [
-    { name: "Ringkasan", href: "/owner" },
-    { name: "Proyek Aktif", href: "/owner/projects" },
-    { name: "Buat Project Baru", href: "/owner/create" },
-    { name: "Pengaturan", href: "/owner/settings" },
+  useEffect(() => {
+    const authRole = localStorage.getItem("zeey_auth_role");
+    const authUser = localStorage.getItem("zeey_auth_user");
+    if (!authRole) {
+      router.push("/");
+    } else {
+      setRole(authRole);
+      setUserName(authUser || (authRole === "owner" ? "Super Admin" : "Admin"));
+    }
+  }, [router]);
+
+  if (!role) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-4 text-sm font-sans text-foreground/60">Memuat sesi Anda...</p>
+      </div>
+    );
+  }
+
+  const ownerNavItems = [
+    { name: "Ringkasan", href: "/dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+    { name: "Buat Project Baru", href: "/dashboard/create", icon: "M12 6v6m0 0v6m0-6h6m-6 0H6" },
+    { name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
+    { name: "Galeri Portofolio", href: "/dashboard/portfolio", icon: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" },
+    { name: "Data Klien (CRM)", href: "/dashboard/crm", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
+    { name: "Pengaturan", href: "/dashboard/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
   ];
 
+  const adminNavItems = [
+    { name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
+    { name: "Galeri Portofolio", href: "/dashboard/portfolio", icon: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" },
+  ];
+
+  const navItems = role === "owner" ? ownerNavItems : adminNavItems;
+
+  const handleLogout = (e: React.MouseEvent) => {
+    e.preventDefault();
+    localStorage.removeItem("zeey_auth_role");
+    localStorage.removeItem("zeey_auth_user");
+    router.push("/");
+  };
+
   return (
-    <div className="flex min-h-screen bg-surface-alt">
-      {/* Mobile Top Nav */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border flex items-center justify-between px-4 z-40">
-        <div className="font-bold text-xl text-foreground">Zeey Studio</div>
+    <div className="flex min-h-screen bg-background text-foreground font-sans selection:bg-accent/30">
+      {/* Mobile Header (Glassmorphism) */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60] shadow-sm">
+        <div className="font-bold text-xl font-serif">Zeey Studio</div>
         <button 
           onClick={() => setIsOpen(!isOpen)}
-          className="p-2 text-foreground/70 hover:text-foreground transition-colors"
+          className="p-2 text-foreground/80 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
+          aria-label="Toggle Menu"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             {isOpen ? (
@@ -34,59 +74,86 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      {/* Sidebar Overlay (Mobile) */}
+      {/* Mobile Backdrop */}
       {isOpen && (
         <div 
-          className="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-all duration-300"
           onClick={() => setIsOpen(false)}
         />
       )}
 
-      {/* Sidebar Content */}
+      {/* Sidebar Container */}
       <div className={`
-        fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-surface border-r border-border flex flex-col transition-transform duration-300 ease-in-out
+        fixed md:sticky top-0 left-0 z-50 h-screen w-[280px] bg-surface border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_24px_rgba(0,0,0,0.02)]
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
       `}>
-        <div className="h-16 flex items-center px-6 border-b border-border">
-          <div className="font-bold text-xl text-foreground">Zeey Studio</div>
+        {/* Brand & User Profile */}
+        <div className="flex flex-col justify-center px-6 pt-8 pb-6 border-b border-border/50">
+          <div className="font-bold text-2xl font-serif text-accent mb-6 flex items-center gap-2">
+            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
+              <circle cx="12" cy="13" r="3"></circle>
+            </svg>
+            Zeey Studio
+          </div>
+          <div className="bg-background rounded-xl p-4 border border-border shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center text-accent font-bold text-lg">
+              {userName?.charAt(0).toUpperCase() || 'U'}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-semibold truncate text-foreground">{userName}</p>
+              <p className="text-xs text-foreground/50 uppercase tracking-widest font-medium mt-0.5">{role}</p>
+            </div>
+          </div>
         </div>
         
-        <nav className="flex-1 px-4 py-6 space-y-2">
+        {/* Navigation */}
+        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto hide-scrollbar">
+          <div className="px-3 mb-2 text-xs font-semibold text-foreground/40 uppercase tracking-widest">Menu Utama</div>
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isReallyActive = item.href === "/dashboard" ? pathname === "/dashboard" : isActive;
+            
             return (
               <Link 
                 key={item.name} 
                 href={item.href}
                 onClick={() => setIsOpen(false)}
                 className={`
-                  flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors
-                  ${isActive 
-                    ? "bg-accent/10 text-accent" 
+                  flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 group relative
+                  ${isReallyActive 
+                    ? "text-accent bg-accent/10" 
                     : "text-foreground/70 hover:bg-surface-alt hover:text-foreground"}
                 `}
               >
+                {isReallyActive && (
+                  <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-accent rounded-r-full" />
+                )}
+                <svg className={`w-5 h-5 mr-3 transition-colors ${isReallyActive ? "text-accent" : "text-foreground/40 group-hover:text-foreground/70"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} />
+                </svg>
                 {item.name}
               </Link>
             );
           })}
         </nav>
         
-        <div className="p-4 border-t border-border">
-          <Link 
-            href="/" 
-            className="flex items-center px-4 py-3 text-sm font-medium text-foreground/60 hover:text-accent transition-colors"
+        {/* Logout */}
+        <div className="p-4 border-t border-border/50">
+          <button 
+            onClick={handleLogout}
+            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group"
           >
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            Keluar
-          </Link>
+            Keluar Akun
+          </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 md:pt-0 pt-16 h-full overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 md:pt-0 pt-16 h-screen overflow-y-auto bg-background/50">
         {children}
       </div>
     </div>

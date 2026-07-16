@@ -1,49 +1,42 @@
 import { NextResponse } from 'next/server';
-const midtransClient = require('midtrans-client');
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const orderId = searchParams.get('orderId');
-    const isMock = searchParams.get('isMock');
 
     if (!orderId) {
       return NextResponse.json({ success: false, error: "orderId is required" }, { status: 400 });
     }
 
-    if (isMock === 'true') {
-      // Simulate that the mock payment always succeeds after a few seconds of polling (handled by client simulation usually, but just in case)
-      // Actually, for mock, the client can just simulate payment.
+    // Extract project ID from orderId (Format: INV-{projectId}-{timestamp})
+    // E.g. INV-john-jane-1b2c-1700000000000 -> we need "john-jane-1b2c"
+    const match = orderId.match(/^INV-(.+)-\d+$/);
+    const projectId = match ? match[1] : null;
+
+    if (!projectId) {
+      return NextResponse.json({ success: false, error: "Invalid orderId format" }, { status: 400 });
+    }
+
+    // Check status in Firestore
+    const docRef = doc(db, "projects", projectId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
       return NextResponse.json({
         success: true,
-        transaction_status: "pending" // Let client handle the simulation
+        // If status is 'Selesai', it means payment was successful. 
+        // Cashify Webhook sets this to 'Selesai' or client sets it if simulating.
+        transaction_status: data.status === 'Selesai' ? 'PAID' : 'pending' 
       });
-    }
-
-    const serverKey = process.env.MIDTRANS_SERVER_KEY;
-    if (!serverKey || serverKey === 'YOUR_MIDTRANS_SERVER_KEY') {
-      return NextResponse.json({ success: false, error: "Server key not configured" }, { status: 500 });
-    }
-
-    const coreApi = new midtransClient.CoreApi({
-      isProduction: false,
-      serverKey: serverKey,
-      clientKey: process.env.MIDTRANS_CLIENT_KEY || ''
-    });
-
-    const statusResponse = await coreApi.transaction.status(orderId);
-
-    return NextResponse.json({
-      success: true,
-      transaction_status: statusResponse.transaction_status, // e.g., 'settlement', 'pending', 'expire'
-      fraud_status: statusResponse.fraud_status
-    });
-  } catch (error: any) {
-    console.error('Midtrans Status Error:', error);
-    // If order not found, Midtrans returns 404
-    if (error.httpStatusCode === 404) {
+    } else {
       return NextResponse.json({ success: true, transaction_status: 'not_found' });
     }
+  } catch (error: any) {
+    console.error('Status Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

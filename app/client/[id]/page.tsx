@@ -4,6 +4,8 @@ import { useState, useEffect, use, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { QRCodeSVG } from "qrcode.react";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 type Project = {
   id: string;
@@ -91,22 +93,32 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   useEffect(() => {
     async function init() {
-      // Get project from localStorage
-      const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
-      const found = savedProjects.find((p: Project) => p.id === resolvedParams.id);
-      
-      // Get price list from localStorage
-      const savedPriceList = JSON.parse(localStorage.getItem("zeey_pricelist") || "null");
-      if (savedPriceList && savedPriceList.length > 0) {
-        setPriceList(savedPriceList);
-      }
-      
-      if (!found) {
-        setIsLoading(false);
-        return;
-      }
-      
-      setProject(found);
+      try {
+        // Get project from Firestore
+        const docRef = doc(db, "projects", resolvedParams.id);
+        const docSnap = await getDoc(docRef);
+        
+        let found: Project | null = null;
+        if (docSnap.exists()) {
+          found = { id: docSnap.id, ...docSnap.data() } as Project;
+        } else {
+          // Fallback to localStorage for older projects
+          const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
+          found = savedProjects.find((p: Project) => p.id === resolvedParams.id) || null;
+        }
+
+        // Get price list from localStorage
+        const savedPriceList = JSON.parse(localStorage.getItem("zeey_pricelist") || "null");
+        if (savedPriceList && savedPriceList.length > 0) {
+          setPriceList(savedPriceList);
+        }
+        
+        if (!found) {
+          setIsLoading(false);
+          return;
+        }
+        
+        setProject(found);
 
       if (found.driveFolderId) {
         try {
@@ -122,6 +134,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         }
       }
       setIsLoading(false);
+      } catch(e) {
+        setErrorMsg("Gagal menghubungi server database");
+        setIsLoading(false);
+      }
     }
     
     init();
@@ -254,7 +270,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         try {
           const res = await fetch(`/api/payment/status?orderId=${orderId}&isMock=${isMockPayment}`);
           const data = await res.json();
-          if (data.success && (data.transaction_status === 'settlement' || data.transaction_status === 'capture')) {
+          if (data.success && (data.transaction_status === 'settlement' || data.transaction_status === 'capture' || data.transaction_status === 'PAID')) {
             setPaymentStatus('settlement');
             handlePaymentSuccess();
           }
@@ -281,8 +297,19 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const extraPhotosCount = project ? Math.max(0, selectedPhotos.size - project.maxPhotos) : 0;
   const totalExtraCost = extraPhotosCount * activeExtraPhotoPrice;
 
-  const updateProjectStatusToSelesai = () => {
+  const updateProjectStatusToSelesai = async () => {
     if (!project) return;
+    try {
+      await updateDoc(doc(db, "projects", project.id), {
+        status: 'Selesai',
+        extraRevenue: totalExtraCost,
+        completedAt: new Date().toISOString()
+      });
+    } catch(e) {
+      console.error(e);
+    }
+
+    // Update fallback localStorage
     const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
     const updatedProjects = savedProjects.map((p: Project) => {
       if (p.id === project.id) {

@@ -14,44 +14,58 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    // Simulate network delay for premium feel
-    setTimeout(() => {
-      if (role === "Owner") {
-        if (username === "owner" && password === "1234") {
-          // In a real app, set an auth cookie/token here
-          localStorage.setItem("zeey_auth_role", "owner");
-          router.push("/owner");
-        } else {
-          setError("Username atau password salah untuk Owner.");
-          setIsLoading(false);
-        }
-      } else if (role === "Admin") {
-        // Check against the actual admins in localStorage
-        const savedAdmins = JSON.parse(localStorage.getItem("zeey_admins") || "[]");
-        const adminFound = savedAdmins.find((a: any) => a.username === username && a.password === password);
-        
-        if (adminFound) {
+    if (role === "Admin") {
+      try {
+        const { collection, getDocs, query, where } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase");
+
+        const q = query(
+          collection(db, "admins"),
+          where("username", "==", username),
+          where("password", "==", password)
+        );
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const adminDoc = querySnapshot.docs[0].data();
           localStorage.setItem("zeey_auth_role", "admin");
-          localStorage.setItem("zeey_auth_user", adminFound.name);
-          router.push("/admin");
+          localStorage.setItem("zeey_auth_user", adminDoc.name);
+          router.push("/dashboard");
         } else {
           setError("Username atau password salah untuk Admin.");
           setIsLoading(false);
         }
-      } else if (role === "Klien") {
-        if (projectId.trim().length > 0) {
-          router.push(`/client/${projectId.trim()}`);
-        } else {
-          setError("ID Project tidak boleh kosong.");
-          setIsLoading(false);
-        }
+      } catch (err) {
+        console.error("Admin login error:", err);
+        setError("Terjadi kesalahan saat login.");
+        setIsLoading(false);
       }
-    }, 800);
+    } else {
+      // Simulate network delay for premium feel
+      setTimeout(() => {
+        if (role === "Owner") {
+          if (username === "owner" && password === "1234") {
+            localStorage.setItem("zeey_auth_role", "owner");
+            router.push("/dashboard");
+          } else {
+            setError("Username atau password salah untuk Owner.");
+            setIsLoading(false);
+          }
+        } else if (role === "Klien") {
+          if (projectId.trim().length > 0) {
+            router.push(`/client/${projectId.trim()}`);
+          } else {
+            setError("ID Project tidak boleh kosong.");
+            setIsLoading(false);
+          }
+        }
+      }, 800);
+    }
   };
 
   return (
