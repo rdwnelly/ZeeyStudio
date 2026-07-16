@@ -54,8 +54,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if ("Notification" in window && Notification.permission === "granted") {
       new Notification(title, { 
         body, 
-        icon: "/icons/icon-192x192.png",
-        vibrate: [200, 100, 200]
+        icon: "/icons/icon-192x192.png"
       });
     }
   };

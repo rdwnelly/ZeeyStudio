@@ -13,12 +13,14 @@ type Project = {
   waNumber: string;
   maxPhotos: number;
   createdAt: string;
-  status: 'Menunggu Pembayaran' | 'Lunas' | 'Selesai Difoto' | 'Menunggu Pemilihan' | 'File Terkirim' | 'Selesai';
+  status: string;
   createdBy: string;
   assignedAdmin?: string;
   shootDate?: string;
   shootTime?: string;
   packageName?: string;
+  packagePrice?: number;
+  dpAmount?: number;
   gdriveLinkHighRes?: string;
 };
 

@@ -213,7 +213,7 @@ export default function FinancePage() {
                         tickFormatter={(value) => `Rp${(value/1000000).toFixed(1)}M`} 
                       />
                       <Tooltip 
-                        formatter={(value: number) => [`Rp ${value.toLocaleString("id-ID")}`, ""]}
+                        formatter={(value) => [`Rp ${Number(value).toLocaleString("id-ID")}`, ""]}
                         cursor={{fill: 'rgba(0,0,0,0.05)'}}
                       />
                       <Legend iconType="circle" />

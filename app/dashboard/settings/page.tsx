@@ -23,7 +23,7 @@ const DEFAULT_PRICELIST: PriceItem[] = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'integrasi'>('profil');
+  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'integrasi' | 'portofolio'>('profil');
   const router = useRouter();
 
   useEffect(() => {
@@ -749,7 +749,7 @@ export default function SettingsPage() {
                           <td className="p-4 text-foreground/80">{adm.name}</td>
                           <td className="p-4">
                             <div className="flex flex-wrap gap-1">
-                              {adm.accesses?.map(acc => (
+                              {adm.accesses?.map((acc: string) => (
                                 <span key={acc} className="px-2 py-0.5 bg-accent/10 text-accent rounded text-[10px] uppercase font-bold tracking-wider">
                                   {acc}
                                 </span>
