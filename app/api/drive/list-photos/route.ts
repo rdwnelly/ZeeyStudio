@@ -13,7 +13,21 @@ export async function GET(request: Request) {
       );
     }
 
-    const photos = await getPhotosInFolder(folderId);
+    // Extract ID if a full link was passed
+    let cleanFolderId = folderId;
+    if (folderId.includes('drive.google.com/drive/folders/')) {
+      const parts = folderId.split('folders/');
+      if (parts.length > 1) {
+        cleanFolderId = parts[1].split('?')[0].split('/')[0];
+      }
+    } else if (folderId.includes('drive.google.com/file/d/')) {
+      const parts = folderId.split('file/d/');
+      if (parts.length > 1) {
+        cleanFolderId = parts[1].split('/')[0];
+      }
+    }
+
+    const photos = await getPhotosInFolder(cleanFolderId);
 
     // Map to a cleaner format for the frontend
     const formattedPhotos = photos.map((photo) => ({

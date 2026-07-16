@@ -7,9 +7,9 @@ export function crc16(data: string): string {
     crc ^= data.charCodeAt(i) << 8;
     for (let j = 0; j < 8; j++) {
       if ((crc & 0x8000) !== 0) {
-        crc = (crc << 1) ^ 0x1021;
+        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
       } else {
-        crc = crc << 1;
+        crc = (crc << 1) & 0xFFFF;
       }
     }
   }
@@ -18,49 +18,56 @@ export function crc16(data: string): string {
 }
 
 /**
+ * Parses a QRIS string into a Map of tags
+ */
+function parseQris(qris: string): Map<string, string> {
+  const tags = new Map<string, string>();
+  let i = 0;
+  while (i < qris.length) {
+    if (i + 4 > qris.length) break;
+    const tag = qris.substring(i, i + 2);
+    const lenStr = qris.substring(i + 2, i + 4);
+    const len = parseInt(lenStr, 10);
+    if (isNaN(len)) break;
+    
+    if (i + 4 + len > qris.length) break;
+    const val = qris.substring(i + 4, i + 4 + len);
+    
+    if (tag === '63') break; // Ignore CRC, we will recalculate it
+    
+    tags.set(tag, val);
+    i += 4 + len;
+  }
+  return tags;
+}
+
+/**
  * Converts a static QRIS string into a dynamic QRIS string with a specific amount.
  */
 export function generateDynamicQris(staticQris: string, amount: number, orderId?: string): string {
-  // Ensure the string ends with 6304 and 4 chars CRC
   if (!staticQris || staticQris.length < 8) return staticQris;
+
+  const tags = parseQris(staticQris);
   
-  // 1. Remove the old CRC (last 4 chars) and the tag 63 length (6304)
-  const tag63Index = staticQris.lastIndexOf("6304");
-  if (tag63Index === -1) return staticQris;
-  
-  const base = staticQris.substring(0, tag63Index);
-  
-  // 2. Change 010211 to 010212 (Point of Initiation Method: 11 is static, 12 is dynamic)
-  let dynamicBase = base.replace("010211", "010212");
-  
-  // 3. Create Tag 54 (Transaction Amount)
-  const amountStr = amount.toString();
-  const amountLen = amountStr.length.toString().padStart(2, '0');
-  const tag54 = `54${amountLen}${amountStr}`;
-  
-  // 4. Create Tag 62 (Additional Data Field Template) for Order ID
-  let tag62 = "";
-  if (orderId) {
-    // tag 62 subtag 01 is Bill Number
-    const billNumLen = orderId.length.toString().padStart(2, '0');
-    const subTag01 = `01${billNumLen}${orderId}`;
-    const tag62Len = subTag01.length.toString().padStart(2, '0');
-    tag62 = `62${tag62Len}${subTag01}`;
+  // 1. Point of Initiation Method: 11 is static, 12 is dynamic
+  if (tags.has("01")) {
+    tags.set("01", "12");
   }
   
-  // Try to insert Tags before Tag 58 (Country Code)
-  const tag58Index = dynamicBase.indexOf("5802ID");
-  if (tag58Index !== -1) {
-    dynamicBase = dynamicBase.substring(0, tag58Index) + tag54 + tag62 + dynamicBase.substring(tag58Index);
-  } else {
-    // Fallback: just append it
-    dynamicBase += tag54 + tag62;
+  // 2. Transaction Amount
+  tags.set("54", amount.toString());
+  
+  // 3. Reconstruct QRIS strictly ordered by EMVCo tags
+  let dynamicBase = "";
+  const sortedKeys = Array.from(tags.keys()).sort();
+  for (const tag of sortedKeys) {
+    const val = tags.get(tag)!;
+    const len = val.length.toString().padStart(2, '0');
+    dynamicBase += `${tag}${len}${val}`;
   }
   
-  // 5. Re-append tag 6304
+  // 4. Add tag 6304 (CRC)
   dynamicBase += "6304";
-  
-  // 6. Calculate new CRC
   const crc = crc16(dynamicBase);
   
   return dynamicBase + crc;

@@ -1,8 +1,8 @@
 {
-    "name": "ZeeyStudio REP",
+    "name": "Zeey Studio",
     "short_name": "ZeeyStudio",
-    "description": "Aplikasi Manajemen Internal Yayasan Rumah Etnik Papua",
-    "start_url": "/",
+    "description": "Sistem Manajemen Internal Zeey Studio",
+    "start_url": "/dashboard",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#2563eb",

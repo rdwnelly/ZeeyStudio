@@ -1,61 +1,90 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-cashify-signature') || req.headers.get('signature');
+
+    // Default to env var, but override if configured in Settings
+    let secret = process.env.CASHIFY_WEBHOOK_SECRET;
     
-    const secret = process.env.CASHIFY_WEBHOOK_SECRET;
+    const settingsSnap = await getDoc(doc(db, "settings", "payment"));
+    if (settingsSnap.exists()) {
+      const settingsData = settingsSnap.data();
+      if (settingsData.cashifyWebhookSecret) {
+        secret = settingsData.cashifyWebhookSecret;
+      }
+    }
+
     if (!secret) {
       return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });
     }
 
-    // If signature is provided in headers, verify it (Optional depending on exact Cashify spec)
+    // If signature is provided in headers, verify it
     if (signature) {
       const hash = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-      // Some systems use base64 instead of hex for HMAC, but hex is most common
       if (hash !== signature && hash !== signature.toLowerCase()) {
         console.warn('Webhook signature mismatch. Expected:', hash, 'Got:', signature);
-        // We'll log a warning but proceed if it's a test environment, or you can block it:
-        // return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
       }
     }
 
     const payload = JSON.parse(rawBody);
     console.log('Received Cashify Webhook:', payload);
-    
-    // Map common reference ID fields used by payment gateways
-    const orderId = payload.reference_id || payload.bill_number || payload.order_id || payload.merchantOrderId;
-    const status = payload.status || payload.transaction_status || payload.paymentStatus;
-    
-    // Check if status is indicating success
-    const isSuccess = ['PAID', 'SUCCESS', 'settlement', 'capture', 'COMPLETED'].includes(status?.toUpperCase());
 
-    if (!orderId || !isSuccess) {
-      return NextResponse.json({ success: true, message: "Ignored (not success or missing orderId)" });
+    // Some gateways wrap the actual transaction object in a 'data' property
+    const dataObj = payload.data && typeof payload.data === 'object' ? payload.data : payload;
+
+    // Map common reference ID fields used by payment gateways
+    const orderId = dataObj.reference_id || dataObj.bill_number || dataObj.order_id || dataObj.merchantOrderId || dataObj.external_id;
+    const status = dataObj.status || dataObj.transaction_status || dataObj.paymentStatus || payload.event;
+    const paymentAmount = dataObj.amount || dataObj.gross_amount || dataObj.totalAmount || dataObj.paid_amount || 0;
+
+    // Check if status is indicating success
+    const isSuccess = ['PAID', 'SUCCESS', 'SETTLEMENT', 'CAPTURE', 'COMPLETED', 'SETTLED', 'TRANSACTION.PAID', 'PAYMENT.SUCCESS'].includes(status?.toUpperCase());
+
+    if (!isSuccess) {
+      return NextResponse.json({ success: true, message: `Ignored (not success status: ${status})` });
     }
 
-    // Extract projectId from orderId (Format: INV-{projectId}-{timestamp})
-    const match = orderId.match(/^INV-(.+)-\d+$/);
-    const projectId = match ? match[1] : null;
+    let projectId: string | null = null;
+
+    if (orderId) {
+      // Extract projectId from orderId (Format: INV-{projectId}-{timestamp})
+      const match = orderId.match(/^INV-(.+)-\d+$/);
+      projectId = match ? match[1] : null;
+    }
+
+    if (!projectId && paymentAmount) {
+      // Fallback: Find project by pending payment amount
+      const q = query(collection(db, "projects"), where("status", "==", "Proses"));
+      const snapshot = await getDocs(q);
+      
+      for (const d of snapshot.docs) {
+        const data = d.data();
+        if (data.pendingPayment && Number(data.pendingPayment.amount) === Number(paymentAmount)) {
+          projectId = d.id;
+          break;
+        }
+      }
+    }
 
     if (!projectId) {
-      return NextResponse.json({ success: false, error: "Could not parse projectId from orderId" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Could not map webhook to any projectId" }, { status: 400 });
     }
 
     // Update Firestore
-    const docRef = doc(db, "projects", projectId);
-    const docSnap = await getDoc(docRef);
+    const projectRef = doc(db, "projects", projectId);
+    const projectSnap = await getDoc(projectRef);
 
-    if (docSnap.exists()) {
-      await updateDoc(docRef, {
+    if (projectSnap.exists()) {
+      await updateDoc(projectRef, {
         status: 'Selesai',
         paymentInfo: {
           method: 'Cashify QRIS',
-          amount: payload.amount || payload.gross_amount || payload.totalAmount || 0,
+          amount: paymentAmount,
           paidAt: new Date().toISOString(),
           referenceId: orderId,
           rawWebhook: payload

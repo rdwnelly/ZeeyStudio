@@ -20,6 +20,7 @@ type Project = {
   extraRevenue?: number;
   completedAt?: string;
   createdBy?: string;
+  assignedAdmin?: string;
 };
 
 const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
@@ -38,10 +39,17 @@ export default function DashboardHome() {
       try {
         const q = query(collection(db, "projects"));
         const snapshot = await getDocs(q);
-        const fetchedProjects: Project[] = [];
+        let fetchedProjects: Project[] = [];
         snapshot.forEach(doc => {
           fetchedProjects.push({ id: doc.id, ...doc.data() } as Project);
         });
+
+        const role = localStorage.getItem("zeey_auth_role") || "";
+        const name = localStorage.getItem("zeey_auth_user") || "";
+
+        if (role === 'admin') {
+          fetchedProjects = fetchedProjects.filter(p => p.assignedAdmin === name || p.createdBy === name);
+        }
 
         setProjects(fetchedProjects);
         

@@ -12,6 +12,9 @@ type Project = {
   waNumber: string;
   clientEmail?: string;
   createdAt: string;
+  clientType?: 'Reguler' | 'VIP' | 'Blacklist';
+  leadSource?: string;
+  socialMedia?: string;
 };
 
 type ClientData = {
@@ -20,6 +23,9 @@ type ClientData = {
   email: string;
   totalOrders: number;
   lastOrderDate: string;
+  clientType: 'Reguler' | 'VIP' | 'Blacklist';
+  leadSource: string;
+  socialMedia: string;
 };
 
 export default function CRMPage() {
@@ -52,9 +58,12 @@ export default function CRMPage() {
             // Update last order date if this project is newer
             if (new Date(data.createdAt) > new Date(existing.lastOrderDate)) {
               existing.lastOrderDate = data.createdAt;
-              // Keep the latest name/email just in case it was updated
+              // Keep the latest fields just in case it was updated
               existing.name = data.clientName;
               if (data.clientEmail) existing.email = data.clientEmail;
+              if (data.clientType) existing.clientType = data.clientType;
+              if (data.leadSource) existing.leadSource = data.leadSource;
+              if (data.socialMedia) existing.socialMedia = data.socialMedia;
             }
           } else {
             clientMap.set(wa, {
@@ -62,7 +71,10 @@ export default function CRMPage() {
               name: data.clientName || "Unknown",
               email: data.clientEmail || "-",
               totalOrders: 1,
-              lastOrderDate: data.createdAt || new Date().toISOString()
+              lastOrderDate: data.createdAt || new Date().toISOString(),
+              clientType: data.clientType || 'Reguler',
+              leadSource: data.leadSource || '-',
+              socialMedia: data.socialMedia || '-'
             });
           }
         });
@@ -89,11 +101,14 @@ export default function CRMPage() {
   );
 
   const exportToCSV = () => {
-    const headers = ["Nama Klien", "WhatsApp", "Email", "Total Pesanan", "Tanggal Pesanan Terakhir"];
+    const headers = ["Nama Klien", "Tipe Klien", "Sumber (Lead)", "Sosial Media", "WhatsApp", "Email", "Total Pesanan", "Tanggal Pesanan Terakhir"];
     const csvRows = [
       headers.join(","),
       ...filteredClients.map(c => [
         `"${c.name}"`, 
+        `"${c.clientType}"`,
+        `"${c.leadSource}"`,
+        `"${c.socialMedia}"`,
         `"${c.waNumber}"`, 
         `"${c.email}"`, 
         c.totalOrders, 
@@ -150,7 +165,7 @@ export default function CRMPage() {
               <thead className="bg-surface-alt/50 text-sm text-foreground/70 border-b border-border">
                 <tr>
                   <th className="p-4 font-medium pl-6">Nama Pelanggan</th>
-                  <th className="p-4 font-medium">Kontak</th>
+                  <th className="p-4 font-medium">Kontak & Sosmed</th>
                   <th className="p-4 font-medium text-center">Riwayat Pesanan</th>
                   <th className="p-4 font-medium">Pesanan Terakhir</th>
                   <th className="p-4 font-medium text-right pr-6">Aksi</th>
@@ -177,10 +192,24 @@ export default function CRMPage() {
                     
                     return (
                       <tr key={idx} className="hover:bg-surface-alt/30 transition-colors group">
-                        <td className="p-4 pl-6 font-medium text-foreground">{client.name}</td>
+                        <td className="p-4 pl-6">
+                          <div className="flex items-center gap-2 font-medium text-foreground">
+                            {client.name}
+                            {client.clientType === 'VIP' && (
+                              <span className="text-[10px] px-2 py-0.5 bg-yellow-500/20 text-yellow-600 border border-yellow-500/30 rounded-full font-bold">VIP</span>
+                            )}
+                            {client.clientType === 'Blacklist' && (
+                              <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-600 border border-red-500/30 rounded-full font-bold">BLACKLIST</span>
+                            )}
+                          </div>
+                          {client.leadSource !== '-' && (
+                            <div className="text-[10px] text-foreground/50 mt-1">Sumber: {client.leadSource}</div>
+                          )}
+                        </td>
                         <td className="p-4">
                           <div className="flex flex-col text-sm">
                             <span className="text-foreground/80">{client.waNumber}</span>
+                            {client.socialMedia !== "-" && <span className="text-accent text-xs mt-0.5">{client.socialMedia}</span>}
                             {client.email !== "-" && <span className="text-foreground/50 text-xs mt-0.5">{client.email}</span>}
                           </div>
                         </td>

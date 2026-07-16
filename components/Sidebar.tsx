@@ -3,22 +3,34 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "./ThemeProvider";
+import { NotificationProvider } from "./NotificationProvider";
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [role, setRole] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
+  const [userAccesses, setUserAccesses] = useState<string[]>([]);
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const authRole = localStorage.getItem("zeey_auth_role");
     const authUser = localStorage.getItem("zeey_auth_user");
+    const authAccessStr = localStorage.getItem("zeey_auth_access");
     if (!authRole) {
       router.push("/");
     } else {
       setRole(authRole);
       setUserName(authUser || (authRole === "owner" ? "Super Admin" : "Admin"));
+      if (authAccessStr) {
+        try {
+          setUserAccesses(JSON.parse(authAccessStr));
+        } catch (e) {
+          setUserAccesses([]);
+        }
+      }
     }
   }, [router]);
 
@@ -31,39 +43,38 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const ownerNavItems = [
-    { name: "Ringkasan", href: "/dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
-    { name: "Buat Project Baru", href: "/dashboard/create", icon: "M12 6v6m0 0v6m0-6h6m-6 0H6" },
-    { name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
-    { name: "Galeri Portofolio", href: "/dashboard/portfolio", icon: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" },
-    { name: "Data Klien (CRM)", href: "/dashboard/crm", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
-    { name: "Pengaturan", href: "/dashboard/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+  const ALL_MODULES = [
+    { id: "dashboard", name: "Ringkasan", href: "/dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+    { id: "create", name: "Buat Project Baru", href: "/dashboard/create", icon: "M12 6v6m0 0v6m0-6h6m-6 0H6" },
+    { id: "bookings", name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
+    { id: "editor", name: "Tugas Editor", href: "/dashboard/editor", icon: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" },
+    { id: "finance", name: "Keuangan & Bisnis", href: "/dashboard/finance", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+    { id: "crm", name: "Data Klien (CRM)", href: "/dashboard/crm", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
+    { id: "audit", name: "Riwayat Aktivitas", href: "/dashboard/audit", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
+    { id: "settings", name: "Pengaturan", href: "/dashboard/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
   ];
 
-  const adminNavItems = [
-    { name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
-    { name: "Galeri Portofolio", href: "/dashboard/portfolio", icon: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" },
-  ];
-
-  const navItems = role === "owner" ? ownerNavItems : adminNavItems;
+  const navItems = role === "owner" ? ALL_MODULES : ALL_MODULES.filter(item => userAccesses.includes(item.id));
 
   const handleLogout = (e: React.MouseEvent) => {
     e.preventDefault();
     localStorage.removeItem("zeey_auth_role");
+    localStorage.removeItem("zeey_auth_access");
     localStorage.removeItem("zeey_auth_user");
     router.push("/");
   };
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground font-sans selection:bg-accent/30">
-      {/* Mobile Header (Glassmorphism) */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60] shadow-sm">
-        <div className="font-bold text-xl font-serif">Zeey Studio</div>
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          className="p-2 text-foreground/80 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
-          aria-label="Toggle Menu"
-        >
+    <NotificationProvider>
+      <div className="flex min-h-screen bg-background text-foreground font-sans selection:bg-accent/30">
+        {/* Mobile Header (Glassmorphism) */}
+        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60] shadow-sm">
+          <div className="font-bold text-xl font-serif">Zeey Studio</div>
+          <button 
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-2 text-foreground/80 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
+            aria-label="Toggle Menu"
+          >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             {isOpen ? (
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -138,11 +149,27 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         
-        {/* Logout */}
-        <div className="p-4 border-t border-border/50">
+        {/* Theme Toggle & Logout */}
+        <div className="p-4 border-t border-border/50 flex flex-col gap-2">
+          <button 
+            onClick={toggleTheme}
+            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-surface-alt hover:text-foreground transition-all cursor-pointer group"
+          >
+            {theme === 'dark' ? (
+              <>
+                <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-foreground transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                Mode Terang
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-foreground transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                Mode Gelap
+              </>
+            )}
+          </button>
           <button 
             onClick={handleLogout}
-            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group"
+            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-all cursor-pointer group"
           >
             <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -157,5 +184,6 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     </div>
+    </NotificationProvider>
   );
 }
