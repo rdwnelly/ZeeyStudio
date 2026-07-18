@@ -142,21 +142,23 @@ function CreateBookingForm() {
     const projectData: any = {
       clientName,
       waNumber,
-      clientEmail: clientEmail.trim() || undefined,
       maxPhotos: Number(maxPhotos) || 0,
       shootDate,
       shootTime,
-      packageId: pkg?.id,
-      packageName: pkg?.name,
-      packagePrice: pkg?.price,
+      packageId: pkg?.id || "",
+      packageName: pkg?.name || "",
+      packagePrice: pkg?.price || 0,
       assignedAdmin: assignedAdmin,
       clientType,
       leadSource: leadSource === "Lainnya" ? customLeadSource.trim() : leadSource,
-      socialMedia: socialMedia.trim() || undefined,
-      specialNotes: specialNotes.trim() || undefined,
-      driveFolderId: driveFolderId.trim() || undefined,
       dpAmount: Number(dpAmount) || 0
     };
+
+    // Hanya tambahkan field opsional jika ada nilainya (Firestore tidak menerima undefined)
+    if (clientEmail.trim()) projectData.clientEmail = clientEmail.trim();
+    if (socialMedia.trim()) projectData.socialMedia = socialMedia.trim();
+    if (specialNotes.trim()) projectData.specialNotes = specialNotes.trim();
+    if (driveFolderId.trim()) projectData.driveFolderId = driveFolderId.trim();
 
     try {
       if (editParam && existingProject) {
