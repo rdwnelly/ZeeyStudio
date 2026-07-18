@@ -11,10 +11,21 @@ const SCOPES = ['https://www.googleapis.com/auth/drive'];
  * Initializes and returns an authenticated Google Drive service instance.
  */
 export async function getDriveService() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: KEY_FILE_PATH,
+  let authOptions: any = {
     scopes: SCOPES,
-  });
+  };
+
+  if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    authOptions.credentials = {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      // Replace literal '\n' with actual line breaks for the private key
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    };
+  } else {
+    authOptions.keyFile = KEY_FILE_PATH;
+  }
+
+  const auth = new google.auth.GoogleAuth(authOptions);
 
   return google.drive({ version: 'v3', auth });
 }
