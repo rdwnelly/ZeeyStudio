@@ -19,9 +19,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Pengaturan integrasi tidak ditemukan' }, { status: 404 });
     }
     
-    const fonnteToken = settingsDoc.data().fonnteToken;
-    if (!fonnteToken) {
-      return NextResponse.json({ success: false, error: 'Token Fonnte belum dikonfigurasi di dashboard' }, { status: 400 });
+    const integrationData = settingsDoc.data();
+    const fonnteToken = integrationData.fonnteToken;
+    const localBotUrl = integrationData.localBotUrl;
+    
+    if (!fonnteToken && !localBotUrl) {
+      return NextResponse.json({ success: false, error: 'Token Fonnte atau Bot Lokal belum dikonfigurasi di dashboard' }, { status: 400 });
     }
 
     // 3. Ambil Semua Data Pesanan Aktif
@@ -47,6 +50,24 @@ export async function GET(request: Request) {
         cleanTarget = "62" + cleanTarget.substring(1);
       }
       
+      if (localBotUrl) {
+        try {
+          const botResponse = await fetch(`${localBotUrl}/api/send-message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: cleanTarget, message })
+          });
+          if (botResponse.ok) {
+            const data = await botResponse.json();
+            if (data.status) return data;
+          }
+        } catch (err) {
+          console.warn("Local bot failed in cron, falling back to Fonnte...");
+        }
+      }
+
+      if (!fonnteToken) throw new Error("Fonnte API token is missing, and local bot failed");
+
       const response = await fetch("https://api.fonnte.com/send", {
         method: "POST",
         headers: {

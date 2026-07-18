@@ -8,11 +8,16 @@ export async function GET(req: Request) {
     const integrationDoc = await getDoc(doc(db, "settings", "integration"));
     const integration = integrationDoc.exists() ? integrationDoc.data() : null;
 
-    if (!integration || !integration.fonnteToken) {
-      return NextResponse.json({ success: false, message: "Fonnte token not configured" });
+    if (!integration) {
+      return NextResponse.json({ success: false, message: "Integration settings not configured" });
     }
 
     const fonnteToken = integration.fonnteToken;
+    const localBotUrl = integration.localBotUrl;
+    
+    if (!fonnteToken && !localBotUrl) {
+      return NextResponse.json({ success: false, message: "Neither Fonnte token nor Local Bot configured" });
+    }
 
     // 2. Fetch Projects
     const snapshot = await getDocs(collection(db, "projects"));
@@ -54,18 +59,39 @@ export async function GET(req: Request) {
         if (cleanNumber.startsWith("0")) cleanNumber = "62" + cleanNumber.substring(1);
 
         try {
-          await fetch("https://api.fonnte.com/send", {
-            method: "POST",
-            headers: {
-              "Authorization": fonnteToken,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              target: cleanNumber,
-              message: message
-            })
-          });
-          messagesSent++;
+          let sent = false;
+          if (localBotUrl) {
+            try {
+              const botResponse = await fetch(`${localBotUrl}/api/send-message`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ target: cleanNumber, message })
+              });
+              if (botResponse.ok) {
+                const data = await botResponse.json();
+                if (data.status) sent = true;
+              }
+            } catch (err) {
+              console.warn("Local bot failed in daily cron, falling back to Fonnte...");
+            }
+          }
+
+          if (!sent && fonnteToken) {
+            await fetch("https://api.fonnte.com/send", {
+              method: "POST",
+              headers: {
+                "Authorization": fonnteToken,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                target: cleanNumber,
+                message: message
+              })
+            });
+            sent = true;
+          }
+
+          if (sent) messagesSent++;
         } catch (e) {
           console.error("Error sending cron WA:", e);
         }
