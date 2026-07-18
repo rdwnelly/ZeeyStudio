@@ -48,8 +48,9 @@ export default function SettingsPage() {
   const [isPaymentSaved, setIsPaymentSaved] = useState(false);
 
   // --- INTEGRASI STATE ---
-  const [integration, setIntegration] = useState({ fonnteToken: "" });
+  const [integration, setIntegration] = useState({ fonnteToken: "", localBotUrl: "http://localhost:3001" });
   const [isIntegrationSaved, setIsIntegrationSaved] = useState(false);
+  const [botStatus, setBotStatus] = useState({ connected: false, qr: '' });
 
   // --- ADMIN STATE ---
   const [adminsList, setAdminsList] = useState<Array<any>>([]);
@@ -133,6 +134,35 @@ export default function SettingsPage() {
     // Load Admins
     loadAdmins();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'integrasi' && integration.localBotUrl) {
+      const checkStatus = async () => {
+        try {
+          const res = await fetch(`${integration.localBotUrl}/api/status`);
+          const data = await res.json();
+          setBotStatus({ connected: data.connected, qr: data.qr });
+        } catch (err) {
+          // Silent catch to prevent spamming errors if bot is down
+          setBotStatus({ connected: false, qr: '' });
+        }
+      };
+      
+      checkStatus();
+      const interval = setInterval(checkStatus, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, integration.localBotUrl]);
+
+  const handleDisconnectBot = async () => {
+    try {
+      await fetch(`${integration.localBotUrl}/api/logout`, { method: 'POST' });
+      alert("Bot berhasil diputus. Silakan tunggu beberapa detik hingga QR code baru muncul.");
+      setBotStatus({ connected: false, qr: '' });
+    } catch (err) {
+      alert("Gagal memutus bot. Pastikan server bot menyala.");
+    }
+  };
 
   // --- HARGA HANDLERS ---
   const loadPricesFromDb = async () => {
@@ -533,14 +563,78 @@ export default function SettingsPage() {
         {/* Tab Content: Integrasi */}
         {activeTab === 'integrasi' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+            {/* WhatsApp Bot Lokal (SIK-REP) */}
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+                <div className="bg-accent/10 p-3 rounded-xl text-accent">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-serif mb-1">WhatsApp Bot Lokal (SIK-REP)</h2>
+                  <p className="text-foreground/60 font-sans text-sm">Gunakan server WhatsApp Bot pribadi Anda untuk pengiriman pesan tanpa batas (Gratis).</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
+                <div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">URL Server Bot</label>
+                    <input 
+                      type="url" 
+                      value={integration.localBotUrl || ""}
+                      onChange={(e) => setIntegration({...integration, localBotUrl: e.target.value})}
+                      className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
+                      placeholder="http://localhost:3001"
+                    />
+                    <p className="text-xs text-foreground/50 mt-2">Biarkan default jika bot berjalan di komputer yang sama (localhost).</p>
+                  </div>
+                  
+                  <div className="pt-2">
+                    <button onClick={saveIntegration} className="bg-surface-alt border border-border text-foreground px-6 py-2.5 rounded-xl font-medium hover:bg-surface transition-all shadow-sm cursor-pointer text-sm">
+                      Simpan URL Bot
+                    </button>
+                    {isIntegrationSaved && <span className="ml-3 text-green-600 text-sm animate-in fade-in">Tersimpan!</span>}
+                  </div>
+                </div>
+
+                <div className="border border-border rounded-2xl p-6 bg-background flex flex-col items-center justify-center text-center">
+                  <h3 className="font-medium mb-4">Status Koneksi</h3>
+                  
+                  {botStatus.connected ? (
+                    <>
+                      <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                      </div>
+                      <p className="text-green-600 font-medium mb-4">WhatsApp Bot Terhubung!</p>
+                      <button onClick={handleDisconnectBot} className="text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg transition-colors cursor-pointer">
+                        Putuskan Koneksi (Logout)
+                      </button>
+                    </>
+                  ) : botStatus.qr ? (
+                    <>
+                      <div className="bg-white p-2 rounded-xl border border-border mb-4 inline-block">
+                        <img src={botStatus.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
+                      </div>
+                      <p className="text-sm text-foreground/70 mb-2">Scan QR Code ini menggunakan aplikasi WhatsApp di HP Anda (Tautkan Perangkat).</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 border-4 border-foreground/10 border-t-accent rounded-full animate-spin mb-4"></div>
+                      <p className="text-sm text-foreground/70">Mengecek koneksi ke server bot...</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
                 <div className="bg-accent/10 p-3 rounded-xl text-accent">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-serif mb-1">WhatsApp API (Fonnte)</h2>
-                  <p className="text-foreground/60 font-sans text-sm">Hubungkan API Fonnte untuk mengirim notifikasi WhatsApp otomatis ke klien.</p>
+                  <h2 className="text-2xl font-serif mb-1">WhatsApp API (Fonnte) (Opsional/Fallback)</h2>
+                  <p className="text-foreground/60 font-sans text-sm">Hubungkan API Fonnte untuk mengirim notifikasi jika bot lokal sedang mati.</p>
                 </div>
               </div>
               

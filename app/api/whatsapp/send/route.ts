@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { waNumber, message, fonnteToken } = await request.json();
+    const { waNumber, message, fonnteToken, localBotUrl } = await request.json();
 
-    if (!waNumber || !message || !fonnteToken) {
+    if (!waNumber || !message) {
       return NextResponse.json(
-        { success: false, error: 'waNumber, message, and fonnteToken are required' },
+        { success: false, error: 'waNumber and message are required' },
         { status: 400 }
       );
     }
@@ -17,7 +17,42 @@ export async function POST(request: Request) {
       cleanNumber = "62" + cleanNumber.substring(1);
     }
 
-    // Send to Fonnte API
+    // Try Local Bot First
+    if (localBotUrl) {
+      try {
+        const botResponse = await fetch(`${localBotUrl}/api/send-message`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            target: cleanNumber,
+            message: message
+          })
+        });
+
+        if (botResponse.ok) {
+          const data = await botResponse.json();
+          if (data.status) {
+            return NextResponse.json({
+              success: true,
+              message: `Pesan berhasil dikirim ke ${cleanNumber} via Local Bot`
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Local bot failed, falling back to Fonnte...", err);
+      }
+    }
+
+    // Fallback to Fonnte
+    if (!fonnteToken) {
+        return NextResponse.json(
+            { success: false, error: 'Fonnte token is required if local bot fails or is not configured' },
+            { status: 400 }
+        );
+    }
+
     const response = await fetch("https://api.fonnte.com/send", {
       method: "POST",
       headers: {
@@ -35,7 +70,7 @@ export async function POST(request: Request) {
     if (data.status) {
       return NextResponse.json({
         success: true,
-        message: `Pesan berhasil dikirim ke ${cleanNumber}`
+        message: `Pesan berhasil dikirim ke ${cleanNumber} via Fonnte`
       });
     } else {
       return NextResponse.json({

@@ -71,7 +71,8 @@ export default function EditorDashboard() {
             body: JSON.stringify({
               waNumber: project.waNumber,
               message,
-              fonnteToken: integration.fonnteToken
+              fonnteToken: integration.fonnteToken,
+              localBotUrl: integration.localBotUrl
             })
           }).catch(err => console.error("Gagal mengirim WA:", err));
         }
