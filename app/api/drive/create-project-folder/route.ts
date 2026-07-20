@@ -22,8 +22,15 @@ export async function POST(request: Request) {
     // Find the main "ZeeyStudio" folder to use as the parent
     const parentFolderId = await getFolderIdByName("ZeeyStudio");
 
-    // Create the new folder inside the main folder (if found), otherwise at root
-    const folderId = await createFolder(folderName, parentFolderId || undefined);
+    if (!parentFolderId) {
+      return NextResponse.json(
+        { error: 'Folder induk "ZeeyStudio" tidak ditemukan. Pastikan Anda sudah membuat folder bernama "ZeeyStudio" di Google Drive pribadi Anda dan membagikannya (Share) dengan akses Editor ke email Service Account.' },
+        { status: 404 }
+      );
+    }
+
+    // Create the new folder inside the main folder
+    const folderId = await createFolder(folderName, parentFolderId);
 
     return NextResponse.json({
       success: true,

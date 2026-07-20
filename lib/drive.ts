@@ -71,6 +71,8 @@ export async function getFolderIdByName(folderName: string): Promise<string | nu
       q: `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`,
       fields: 'files(id, name)',
       spaces: 'drive',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
     
     const files = res.data.files;
