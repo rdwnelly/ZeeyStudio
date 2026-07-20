@@ -32,24 +32,13 @@ export default function ActiveProjectsPage() {
   }, []);
 
   const handleSendWAReminder = async (project: Project) => {
-    setSendingWAId(project.id);
-    try {
-      const res = await fetch('/api/whatsapp/send-reminder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ waNumber: project.waNumber, clientName: project.clientName }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-      } else {
-        alert('Gagal mengirim pesan: ' + data.error);
-      }
-    } catch (err) {
-      alert('Terjadi kesalahan jaringan.');
-    } finally {
-      setSendingWAId(null);
+    const message = `Halo ${project.clientName},\n\nKami mengingatkan bahwa Anda memiliki foto yang belum dipilih.\nSilakan segera memilih foto Anda melalui link galeri Anda agar tim kami dapat segera memprosesnya.\n\nTerima kasih,\nZeey Studio`;
+    let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
+    if (cleanNumber.startsWith("0")) {
+        cleanNumber = "62" + cleanNumber.substring(1);
     }
+    const waUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
   };
 
   const handleCopyLink = (id: string) => {

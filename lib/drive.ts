@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import path from 'path';
 
 // Path to the service account credentials file
-const KEY_FILE_PATH = path.join(process.cwd(), 'lib', 'zeeystudio-502410-03512456b81a.json');
+const KEY_FILE_PATH = path.join(process.cwd(), 'lib', 'zeeystudio-503010-46fd8f8fb56b.json');
 
 // Define the scopes required (we need full drive access for folders and files)
 const SCOPES = ['https://www.googleapis.com/auth/drive'];

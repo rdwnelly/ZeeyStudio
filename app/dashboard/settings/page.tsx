@@ -23,7 +23,7 @@ const DEFAULT_PRICELIST: PriceItem[] = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'integrasi' | 'portofolio'>('profil');
+  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'portofolio' | 'panduan'>('profil');
   const router = useRouter();
 
   useEffect(() => {
@@ -47,10 +47,7 @@ export default function SettingsPage() {
   const [payment, setPayment] = useState({ cashifyApiKey: "", cashifyWebhookSecret: "", qrisString: "", bankName: "", accountNumber: "", accountName: "" });
   const [isPaymentSaved, setIsPaymentSaved] = useState(false);
 
-  // --- INTEGRASI STATE ---
-  const [integration, setIntegration] = useState({ fonnteToken: "", localBotUrl: "http://localhost:3001" });
-  const [isIntegrationSaved, setIsIntegrationSaved] = useState(false);
-  const [botStatus, setBotStatus] = useState({ connected: false, qr: '' });
+
 
   // --- ADMIN STATE ---
   const [adminsList, setAdminsList] = useState<Array<any>>([]);
@@ -117,52 +114,12 @@ export default function SettingsPage() {
     };
     loadPayment();
 
-    // Load Integrasi from Firestore
-    const loadIntegration = async () => {
-      try {
-        const { getDoc, doc } = await import("firebase/firestore");
-        const docSnap = await getDoc(doc(db, "settings", "integration"));
-        if (docSnap.exists()) {
-          setIntegration(docSnap.data() as any);
-        }
-      } catch (e) {
-        console.error("Error loading integration", e);
-      }
-    };
-    loadIntegration();
+
 
     // Load Admins
     loadAdmins();
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'integrasi' && integration.localBotUrl) {
-      const checkStatus = async () => {
-        try {
-          const res = await fetch(`${integration.localBotUrl}/api/status`);
-          const data = await res.json();
-          setBotStatus({ connected: data.connected, qr: data.qr });
-        } catch (err) {
-          // Silent catch to prevent spamming errors if bot is down
-          setBotStatus({ connected: false, qr: '' });
-        }
-      };
-      
-      checkStatus();
-      const interval = setInterval(checkStatus, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [activeTab, integration.localBotUrl]);
-
-  const handleDisconnectBot = async () => {
-    try {
-      await fetch(`${integration.localBotUrl}/api/logout`, { method: 'POST' });
-      alert("Bot berhasil diputus. Silakan tunggu beberapa detik hingga QR code baru muncul.");
-      setBotStatus({ connected: false, qr: '' });
-    } catch (err) {
-      alert("Gagal memutus bot. Pastikan server bot menyala.");
-    }
-  };
 
   // --- HARGA HANDLERS ---
   const loadPricesFromDb = async () => {
@@ -266,19 +223,6 @@ export default function SettingsPage() {
     }
   };
 
-  // --- INTEGRASI HANDLERS ---
-  const saveIntegration = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { setDoc, doc } = await import("firebase/firestore");
-      await setDoc(doc(db, "settings", "integration"), integration);
-      setIsIntegrationSaved(true);
-      setTimeout(() => setIsIntegrationSaved(false), 3000);
-    } catch (e) {
-      console.error(e);
-      alert("Gagal menyimpan integrasi");
-    }
-  };
 
   // --- ADMIN HANDLERS ---
   const handleAdminSubmit = async (e: React.FormEvent) => {
@@ -408,16 +352,80 @@ export default function SettingsPage() {
             Galeri Portofolio
           </button>
           <button 
-            onClick={() => setActiveTab('integrasi')} 
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'integrasi' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
+            onClick={() => setActiveTab('panduan')} 
+            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'panduan' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
-            Integrasi API
+            Panduan & Bantuan
           </button>
+
         </div>
 
         {/* Tab Content: Portofolio */}
         {activeTab === 'portofolio' && (
           <PortfolioSettings />
+        )}
+
+        {/* Tab Content: Panduan */}
+        {activeTab === 'panduan' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+              <h2 className="text-2xl font-serif mb-6 border-b border-border/50 pb-4">Panduan Penggunaan Google Drive</h2>
+              
+              <div className="space-y-8 font-sans">
+                {/* Langkah 1 */}
+                <div className="flex gap-4 items-start">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center font-bold">1</div>
+                  <div>
+                    <h3 className="text-lg font-medium text-foreground mb-2">Buat Folder di Google Drive</h3>
+                    <p className="text-foreground/70 mb-3 text-sm leading-relaxed">
+                      Buka Google Drive Anda, lalu buat folder baru khusus untuk klien tersebut (misalnya: <strong>"Foto Wedding Budi & Ani"</strong>). Upload semua foto ke dalam folder tersebut.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Langkah 2 */}
+                <div className="flex gap-4 items-start">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center font-bold">2</div>
+                  <div>
+                    <h3 className="text-lg font-medium text-foreground mb-2">Ubah Akses Link (Share)</h3>
+                    <p className="text-foreground/70 mb-3 text-sm leading-relaxed">
+                      Klik kanan pada folder yang baru dibuat, lalu pilih <strong>Bagikan (Share)</strong>. Di bagian "Akses umum" (General access), ubah pilihan "Dibatasi" (Restricted) menjadi <strong>"Siapa saja yang memiliki link" (Anyone with the link)</strong>.
+                    </p>
+                    <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl text-xs">
+                      <strong>⚠️ PENTING:</strong> Jika langkah ini dilewati, klien tidak akan bisa membuka link foto yang Anda berikan.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Langkah 3 */}
+                <div className="flex gap-4 items-start">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center font-bold">3</div>
+                  <div>
+                    <h3 className="text-lg font-medium text-foreground mb-2">Salin (Copy) Link Folder</h3>
+                    <p className="text-foreground/70 mb-3 text-sm leading-relaxed">
+                      Setelah akses diubah, klik tombol <strong>"Salin link" (Copy link)</strong> pada jendela yang sama, lalu klik "Selesai".
+                    </p>
+                  </div>
+                </div>
+
+                {/* Langkah 4 */}
+                <div className="flex gap-4 items-start">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center font-bold">4</div>
+                  <div>
+                    <h3 className="text-lg font-medium text-foreground mb-2">Masukkan Link ke Dashboard Zeey Studio</h3>
+                    <p className="text-foreground/70 mb-3 text-sm leading-relaxed">
+                      Kembali ke dashboard Zeey Studio Anda. Link yang disalin tadi dapat Anda masukkan pada dua tempat berikut:
+                    </p>
+                    <ul className="list-disc list-inside space-y-2 text-sm text-foreground/70 ml-2">
+                      <li><strong>Di halaman "Daftar Pesanan" (Bookings):</strong> Klik tombol <em>"Upload GDrive & Selesai Foto"</em> pada pesanan klien, lalu *paste* (tempel) link di sana.</li>
+                      <li><strong>Di halaman "Tugas Editor" (Editor):</strong> Tempel (paste) link ke kolom <em>"Link Foto Editan (Google Drive)"</em> untuk mengirim foto hasil edit ke klien.</li>
+                    </ul>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Tab Content: Profil */}
@@ -560,107 +568,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Tab Content: Integrasi */}
-        {activeTab === 'integrasi' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-            {/* WhatsApp Bot Lokal (SIK-REP) */}
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
-              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-accent/10 p-3 rounded-xl text-accent">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                </div>
-                <div>
-                  <h2 className="text-2xl font-serif mb-1">WhatsApp Bot Lokal (SIK-REP)</h2>
-                  <p className="text-foreground/60 font-sans text-sm">Gunakan server WhatsApp Bot pribadi Anda untuk pengiriman pesan tanpa batas (Gratis).</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-sans">
-                <div>
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">URL Server Bot</label>
-                    <input 
-                      type="url" 
-                      value={integration.localBotUrl || ""}
-                      onChange={(e) => setIntegration({...integration, localBotUrl: e.target.value})}
-                      className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                      placeholder="http://localhost:3001"
-                    />
-                    <p className="text-xs text-foreground/50 mt-2">Biarkan default jika bot berjalan di komputer yang sama (localhost).</p>
-                  </div>
-                  
-                  <div className="pt-2">
-                    <button onClick={saveIntegration} className="bg-surface-alt border border-border text-foreground px-6 py-2.5 rounded-xl font-medium hover:bg-surface transition-all shadow-sm cursor-pointer text-sm">
-                      Simpan URL Bot
-                    </button>
-                    {isIntegrationSaved && <span className="ml-3 text-green-600 text-sm animate-in fade-in">Tersimpan!</span>}
-                  </div>
-                </div>
 
-                <div className="border border-border rounded-2xl p-6 bg-background flex flex-col items-center justify-center text-center">
-                  <h3 className="font-medium mb-4">Status Koneksi</h3>
-                  
-                  {botStatus.connected ? (
-                    <>
-                      <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
-                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                      </div>
-                      <p className="text-green-600 font-medium mb-4">WhatsApp Bot Terhubung!</p>
-                      <button onClick={handleDisconnectBot} className="text-sm text-red-500 border border-red-200 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg transition-colors cursor-pointer">
-                        Putuskan Koneksi (Logout)
-                      </button>
-                    </>
-                  ) : botStatus.qr ? (
-                    <>
-                      <div className="bg-white p-2 rounded-xl border border-border mb-4 inline-block">
-                        <img src={botStatus.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
-                      </div>
-                      <p className="text-sm text-foreground/70 mb-2">Scan QR Code ini menggunakan aplikasi WhatsApp di HP Anda (Tautkan Perangkat).</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-12 h-12 border-4 border-foreground/10 border-t-accent rounded-full animate-spin mb-4"></div>
-                      <p className="text-sm text-foreground/70">Mengecek koneksi ke server bot...</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
-              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-accent/10 p-3 rounded-xl text-accent">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                </div>
-                <div>
-                  <h2 className="text-2xl font-serif mb-1">WhatsApp API (Fonnte) (Opsional/Fallback)</h2>
-                  <p className="text-foreground/60 font-sans text-sm">Hubungkan API Fonnte untuk mengirim notifikasi jika bot lokal sedang mati.</p>
-                </div>
-              </div>
-              
-              <form onSubmit={saveIntegration} className="space-y-6 max-w-xl font-sans">
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-foreground/80">Fonnte API Token</label>
-                  <input 
-                    type="password" 
-                    value={integration.fonnteToken}
-                    onChange={(e) => setIntegration({...integration, fonnteToken: e.target.value})}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                    placeholder="Masukkan token dari m.fonnte.com"
-                  />
-                  <p className="text-xs text-foreground/50 mt-2">Token ini digunakan untuk mengirim pesan Reminder, Tagihan, dan Info Galeri.</p>
-                </div>
-                
-                <div className="pt-4 flex items-center gap-4">
-                  <button type="submit" className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto">
-                    Simpan Pengaturan
-                  </button>
-                  {isIntegrationSaved && <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Tersimpan!</span>}
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
 
         {/* Tab Content: Harga */}
         {activeTab === 'harga' && (

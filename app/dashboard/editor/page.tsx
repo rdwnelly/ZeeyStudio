@@ -20,10 +20,59 @@ export default function EditorDashboard() {
   const [requests, setRequests] = useState<EditorRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [driveLinks, setDriveLinks] = useState<Record<string, string>>({});
+  const [uploadingFiles, setUploadingFiles] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchRequests();
   }, []);
+
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>, reqId: string, projectId: string) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingFiles(prev => ({ ...prev, [reqId]: true }));
+    try {
+      // Get the project to find the drive folder ID
+      const { getDoc } = await import("firebase/firestore");
+      const projectDoc = await getDoc(doc(db, "projects", projectId));
+      
+      if (!projectDoc.exists() || !projectDoc.data().gdriveFolderId) {
+        alert("Folder Google Drive tidak ditemukan untuk proyek ini. Harap buat folder otomatis terlebih dahulu di halaman Bookings.");
+        setUploadingFiles(prev => ({ ...prev, [reqId]: false }));
+        return;
+      }
+      
+      const folderId = projectDoc.data().gdriveFolderId;
+      
+      // Upload each file
+      for (let i = 0; i < files.length; i++) {
+        const formData = new FormData();
+        formData.append('file', files[i]);
+        formData.append('folderId', folderId);
+
+        const res = await fetch('/api/drive/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!data.success) {
+          console.error("Upload error:", data.error);
+        }
+      }
+      
+      alert(`Berhasil mengunggah ${files.length} foto ke Google Drive!`);
+      // Update the drive link input if it's empty
+      if (!driveLinks[reqId]) {
+        const newLink = projectDoc.data().gdriveLinkHighRes;
+        setDriveLinks(prev => ({ ...prev, [reqId]: newLink }));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan saat mengunggah foto.");
+    } finally {
+      setUploadingFiles(prev => ({ ...prev, [reqId]: false }));
+    }
+  };
 
   const fetchRequests = async () => {
     setIsLoading(true);
@@ -59,22 +108,15 @@ export default function EditorDashboard() {
         const projectDoc = await getDoc(doc(db, "projects", projectId));
         const project = projectDoc.exists() ? projectDoc.data() : null;
 
-        const integrationDoc = await getDoc(doc(db, "settings", "integration"));
-        const integration = integrationDoc.exists() ? integrationDoc.data() : null;
-
-        if (project && project.waNumber && integration?.fonnteToken) {
+        if (project && project.waNumber) {
           const message = `Halo ${project.clientName},\n\nTim Editor kami telah selesai memproses foto pilihan Anda!\nSilakan cek hasil editnya di galeri Anda:\n${window.location.origin}/client/${projectId}\n\nTerima kasih,\nZeey Studio`;
-
-          fetch("/api/whatsapp/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              waNumber: project.waNumber,
-              message,
-              fonnteToken: integration.fonnteToken,
-              localBotUrl: integration.localBotUrl
-            })
-          }).catch(err => console.error("Gagal mengirim WA:", err));
+          
+          let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
+          if (cleanNumber.startsWith("0")) {
+              cleanNumber = "62" + cleanNumber.substring(1);
+          }
+          const waUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
+          window.open(waUrl, '_blank');
         }
       }
 
@@ -201,15 +243,49 @@ export default function EditorDashboard() {
                   {(req.status === "In Progress" || req.status === "Selesai") && (
                     <div className="mb-6">
                       <label className="text-xs text-foreground/50 font-bold uppercase tracking-widest mb-2 block">
-                        Link Foto Editan (Google Drive)
+                        Upload / Link Foto Editan (Google Drive)
                       </label>
-                      <input 
-                        type="url" 
-                        placeholder="https://drive.google.com/..."
-                        value={driveLinks[req.id] || ""}
-                        onChange={(e) => setDriveLinks(prev => ({ ...prev, [req.id]: e.target.value }))}
-                        className="w-full bg-background border border-border text-foreground text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-purple-500 transition-colors mb-2"
-                      />
+                      <div className="flex flex-col gap-2 mb-4">
+                        <label className="w-full relative bg-surface-alt border-2 border-dashed border-border hover:border-purple-500/50 rounded-xl px-4 py-6 text-center cursor-pointer transition-colors group">
+                          {uploadingFiles[req.id] ? (
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                              <span className="text-sm font-medium text-foreground/70">Mengunggah Foto...</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-purple-500/10 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                              </div>
+                              <span className="text-sm font-medium text-foreground/70">Pilih Foto Editan (JPG/PNG)</span>
+                              <span className="text-xs text-foreground/40">Otomatis masuk ke GDrive Klien</span>
+                            </div>
+                          )}
+                          <input 
+                            type="file" 
+                            multiple 
+                            accept="image/jpeg, image/png, image/webp"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onChange={(e) => handleUploadFiles(e, req.id, req.projectId)}
+                            disabled={uploadingFiles[req.id]}
+                          />
+                        </label>
+                        
+                        <div className="relative flex items-center py-2">
+                          <div className="flex-grow border-t border-border"></div>
+                          <span className="flex-shrink-0 mx-4 text-foreground/40 text-xs">ATAU PASTE LINK MANUAL</span>
+                          <div className="flex-grow border-t border-border"></div>
+                        </div>
+
+                        <input 
+                          type="url" 
+                          placeholder="https://drive.google.com/..."
+                          value={driveLinks[req.id] || ""}
+                          onChange={(e) => setDriveLinks(prev => ({ ...prev, [req.id]: e.target.value }))}
+                          className="w-full bg-background border border-border text-foreground text-sm rounded-lg px-4 py-2.5 focus:outline-none focus:border-purple-500 transition-colors"
+                        />
+                      </div>
+
                       <button 
                         onClick={() => sendWhatsAppDirect(req)}
                         className="w-full py-2 bg-green-500/10 text-green-600 border border-green-500/20 rounded-lg text-sm font-medium hover:bg-green-500 hover:text-white transition-colors flex items-center justify-center gap-2"

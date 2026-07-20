@@ -48,13 +48,11 @@ function CreateBookingForm() {
   const [assignedAdmin, setAssignedAdmin] = useState("");
   const [dpAmount, setDpAmount] = useState<number | "">("");
 
-  // CRM State
   const [clientType, setClientType] = useState<'Reguler' | 'VIP' | 'Blacklist'>("Reguler");
   const [leadSource, setLeadSource] = useState("");
   const [customLeadSource, setCustomLeadSource] = useState("");
   const [socialMedia, setSocialMedia] = useState("");
   const [specialNotes, setSpecialNotes] = useState("");
-  const [driveFolderId, setDriveFolderId] = useState("");
 
   const [generatedLink, setGeneratedLink] = useState("");
   const [generatedProject, setGeneratedProject] = useState<Project | null>(null);
@@ -112,7 +110,6 @@ function CreateBookingForm() {
             setLeadSource(data.leadSource || "");
             setSocialMedia(data.socialMedia || "");
             setSpecialNotes(data.specialNotes || "");
-            setDriveFolderId(data.driveFolderId || "");
             setDpAmount(data.dpAmount || "");
           }
         }
@@ -158,7 +155,6 @@ function CreateBookingForm() {
     if (clientEmail.trim()) projectData.clientEmail = clientEmail.trim();
     if (socialMedia.trim()) projectData.socialMedia = socialMedia.trim();
     if (specialNotes.trim()) projectData.specialNotes = specialNotes.trim();
-    if (driveFolderId.trim()) projectData.driveFolderId = driveFolderId.trim();
 
     try {
       if (editParam && existingProject) {
@@ -171,6 +167,25 @@ function CreateBookingForm() {
         alert("Pesanan berhasil diperbarui!");
         window.location.href = '/dashboard/bookings';
       } else {
+        let finalLinkHighRes = "";
+        let finalFolderId = "";
+
+        // Auto create Google Drive Folder
+        try {
+          const folderRes = await fetch('/api/drive/create-project-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientName })
+          });
+          const folderData = await folderRes.json();
+          if (folderData.success && folderData.folderId) {
+            finalFolderId = folderData.folderId;
+            finalLinkHighRes = `https://drive.google.com/drive/folders/${finalFolderId}`;
+          }
+        } catch (e) {
+          console.error("Gagal membuat folder otomatis:", e);
+        }
+
         const newProject: Project = {
           ...projectData,
           id,
@@ -178,6 +193,12 @@ function CreateBookingForm() {
           status: 'Menunggu Pembayaran',
           createdBy: localStorage.getItem('zeey_auth_user') || 'Owner',
         };
+
+        if (finalFolderId) {
+          newProject.gdriveFolderId = finalFolderId;
+          newProject.gdriveLinkHighRes = finalLinkHighRes;
+        }
+
         await setDoc(doc(db, "projects", id), newProject);
 
         const link = `${window.location.origin}/client/${id}`;
@@ -189,20 +210,19 @@ function CreateBookingForm() {
         
         // Reset form
         setClientName("");
-      setWaNumber("");
-      setClientEmail("");
-      setShootDate("");
-      setShootTime("");
-      setSelectedPackage("");
-      setMaxPhotos("");
-      setAssignedAdmin("");
-      setClientType("Reguler");
-      setLeadSource("");
-      setCustomLeadSource("");
-      setSocialMedia("");
-      setSpecialNotes("");
-      setDriveFolderId("");
-      setDpAmount("");
+        setWaNumber("");
+        setClientEmail("");
+        setShootDate("");
+        setShootTime("");
+        setSelectedPackage("");
+        setMaxPhotos("");
+        setAssignedAdmin("");
+        setClientType("Reguler");
+        setLeadSource("");
+        setCustomLeadSource("");
+        setSocialMedia("");
+        setSpecialNotes("");
+        setDpAmount("");
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan');
@@ -342,18 +362,6 @@ function CreateBookingForm() {
                 onChange={(e) => setSpecialNotes(e.target.value)}
                 placeholder="e.g., Klien pemalu, konsep vintage, alergi makeup..."
               />
-            </div>
-
-            <div className="mt-4">
-              <label className="block text-sm font-medium mb-2">Link / ID Folder Google Drive (Opsional)</label>
-              <input 
-                type="text" 
-                className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                value={driveFolderId}
-                onChange={(e) => setDriveFolderId(e.target.value)}
-                placeholder="e.g., https://drive.google.com/drive/folders/... atau 1A2B3C..."
-              />
-              <p className="text-xs text-foreground/50 mt-1">Masukkan ID folder atau link folder Google Drive tempat foto mentah disimpan (berguna agar foto klien bisa langsung dibaca sistem).</p>
             </div>
 
             <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4 pt-6">Detail Pesanan</h2>

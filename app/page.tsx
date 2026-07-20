@@ -165,7 +165,7 @@ export default function LoginPage() {
                     placeholder="Contoh: ZY-2409-XXX"
                     className="w-full px-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-mono"
                   />
-                  <p className="text-xs text-foreground/40 mt-3 font-sans text-center">Kode dikirimkan via pesan otomatis WhatsApp.</p>
+                  <p className="text-xs text-foreground/40 mt-3 font-sans text-center">Kode dikirimkan via pesan WhatsApp.</p>
                 </div>
               ) : (
                 <div className="space-y-5 animate-in fade-in slide-in-from-left-4 duration-500">

@@ -36,6 +36,7 @@ export default function BookingsPage() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [creatingFolderId, setCreatingFolderId] = useState<string | null>(null);
   
   const router = useRouter();
 
@@ -95,11 +96,7 @@ export default function BookingsPage() {
       // WhatsApp Notification Logic
       const project = projects.find(p => p.id === id);
       
-      const { getDoc } = await import("firebase/firestore");
-      const integrationDoc = await getDoc(doc(db, "settings", "integration"));
-      const integration = integrationDoc.exists() ? integrationDoc.data() : null;
-      
-      if (project && integration?.fonnteToken) {
+      if (project) {
         let message = "";
         if (newStatus === 'Menunggu Pemilihan') {
           message = `Halo ${project.clientName},\n\nSesi foto Anda sudah selesai!\nSilakan klik tautan berikut untuk memilih foto mana yang ingin kami edit:\n${window.location.origin}/client/${id}\n\nTerima kasih,\nZeey Studio`;
@@ -108,16 +105,14 @@ export default function BookingsPage() {
         }
 
         if (message) {
-          fetch("/api/whatsapp/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              waNumber: project.waNumber,
-              message,
-              fonnteToken: integration.fonnteToken,
-              localBotUrl: integration.localBotUrl
-            })
-          }).catch(err => console.error("Gagal mengirim WA:", err));
+          // Format number (remove non-digits, ensure it starts with country code if needed, assuming it's mostly Indonesian 62 or 08)
+          let phone = project.waNumber.replace(/[^0-9]/g, '');
+          if (phone.startsWith('0')) {
+            phone = '62' + phone.substring(1);
+          }
+          const encodedMessage = encodeURIComponent(message);
+          const waUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
+          window.open(waUrl, '_blank');
         }
       }
 
@@ -228,7 +223,7 @@ export default function BookingsPage() {
       const imgData = canvas.toDataURL('image/png');
       
       const pdf = new jsPDF({
-        orientation: 'portrait',
+        orientation: 'landscape',
         unit: 'px',
         format: [canvas.width / 2, canvas.height / 2]
       });
@@ -244,6 +239,36 @@ export default function BookingsPage() {
       alert("Gagal membuat PDF Invoice");
     } finally {
       setIsGeneratingPDF(false);
+    }
+  };
+
+  const handleCreateFolder = async (project: Project) => {
+    setCreatingFolderId(project.id);
+    try {
+      const res = await fetch('/api/drive/create-project-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientName: project.clientName })
+      });
+      const data = await res.json();
+      
+      if (data.success && data.folderId) {
+        const link = `https://drive.google.com/drive/folders/${data.folderId}`;
+        await updateStatus(project.id, 'Menunggu Pemilihan', { 
+          gdriveLinkHighRes: link,
+          gdriveFolderId: data.folderId 
+        });
+        
+        const { logActivity } = await import("@/lib/audit");
+        await logActivity("Buat Folder Drive", `Sistem otomatis membuat folder Drive untuk ${project.clientName}`);
+      } else {
+        alert("Gagal membuat folder: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan saat membuat folder otomatis.");
+    } finally {
+      setCreatingFolderId(null);
     }
   };
 
@@ -399,15 +424,32 @@ export default function BookingsPage() {
                     )}
                     
                     {project.status === 'Lunas' && (
-                      <button 
-                        onClick={() => {
-                          const link = prompt("Masukkan Link Google Drive untuk Klien (Folder Pemilihan):");
-                          if (link) updateStatus(project.id, 'Menunggu Pemilihan', { gdriveLinkHighRes: link });
-                        }} 
-                        className="w-full bg-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm cursor-pointer"
-                      >
-                        Upload GDrive & Selesai Foto
-                      </button>
+                      <div className="flex flex-col gap-2">
+                        <button 
+                          onClick={() => handleCreateFolder(project)} 
+                          disabled={creatingFolderId === project.id}
+                          className="w-full bg-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {creatingFolderId === project.id ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              Membuat Folder...
+                            </>
+                          ) : (
+                            "Buat Folder GDrive (Otomatis)"
+                          )}
+                        </button>
+                        
+                        <button 
+                          onClick={() => {
+                            const link = prompt("Masukkan Link Google Drive untuk Klien (Folder Pemilihan):");
+                            if (link) updateStatus(project.id, 'Menunggu Pemilihan', { gdriveLinkHighRes: link });
+                          }} 
+                          className="w-full bg-surface-alt border border-border text-foreground px-4 py-2 rounded-xl text-xs font-medium hover:bg-border transition-colors cursor-pointer"
+                        >
+                          Atau Input Manual Link GDrive
+                        </button>
+                      </div>
                     )}
                     
                     {(project.status === 'Menunggu Pemilihan' || project.status === 'Selesai Difoto') && (
@@ -493,11 +535,20 @@ export default function BookingsPage() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
                         </button>
                       </div>
+
+                      <button 
+                        onClick={() => handleDownloadInvoice(project)}
+                        disabled={isGeneratingPDF}
+                        className="w-full flex items-center justify-center gap-2 bg-white border border-border text-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-surface-alt transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        {isGeneratingPDF ? "Membuat PDF..." : "Unduh Invoice (PDF)"}
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                      </button>
                       
                       {userRole === 'owner' && (
                         <button 
                           onClick={() => updateStatus(project.id, 'Selesai Difoto')} 
-                          className="mt-2 w-full text-foreground/50 border border-border px-4 py-2 rounded-xl text-xs font-medium hover:bg-surface-alt transition-colors cursor-pointer"
+                          className="w-full text-foreground/50 border border-border px-4 py-2 rounded-xl text-xs font-medium hover:bg-surface-alt transition-colors cursor-pointer"
                         >
                           Buka Kembali (Reopen)
                         </button>
@@ -600,7 +651,7 @@ export default function BookingsPage() {
 
       {/* Hidden Invoice Template for PDF Generation */}
       {selectedProject && (
-        <div id="invoice-template" style={{ display: 'none', width: '800px', backgroundColor: 'white', padding: '40px', color: 'black', fontFamily: 'sans-serif' }}>
+        <div id="invoice-template" style={{ display: 'none', width: '1122px', backgroundColor: 'white', padding: '40px', color: 'black', fontFamily: 'sans-serif' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #f3f4f6', paddingBottom: '20px', marginBottom: '30px' }}>
             <div>
               <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 5px 0', color: '#111827' }}>INVOICE</h1>
