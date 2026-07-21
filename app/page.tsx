@@ -7,13 +7,9 @@ import { useTheme } from "@/components/ThemeProvider";
 export default function LoginPage() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  // We use two modes: "staff" (for Admin & Owner) and "client" (for Klien)
-  const [mode, setMode] = useState<"staff" | "client">("staff");
   
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [projectId, setProjectId] = useState("");
-  
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,32 +18,27 @@ export default function LoginPage() {
     setError("");
     setIsLoading(true);
 
-    if (mode === "client") {
-      setTimeout(() => {
-        if (projectId.trim().length > 0) {
-          router.push(`/client/${projectId.trim()}`);
-        } else {
-          setError("Kode akses tidak boleh kosong.");
-          setIsLoading(false);
-        }
-      }, 800);
-      return;
-    }
-
-    // --- Staff Login Mode (Unified Admin & Owner) ---
     try {
-      // Check for Owner first (Hardcoded demo)
-      if (username.toLowerCase() === "owner" && password === "1234") {
-        setTimeout(() => {
+      // 1. Check for Owner using Firebase Auth (Email/Password)
+      if (username.includes("@")) {
+        const { auth } = await import("@/lib/firebase");
+        const { signInWithEmailAndPassword } = await import("firebase/auth");
+        try {
+          await signInWithEmailAndPassword(auth, username, password);
           localStorage.setItem("zeey_auth_role", "owner");
           localStorage.setItem("zeey_auth_user", "Owner");
-          import("@/lib/audit").then(module => module.logActivity("Login", "Owner berhasil masuk."));
+          const { logActivity } = await import("@/lib/audit");
+          await logActivity("Login", "Owner berhasil masuk via Firebase Auth.");
           router.push("/dashboard");
-        }, 800);
-        return;
+          return;
+        } catch (authErr: any) {
+          setError("Email atau password salah.");
+          setIsLoading(false);
+          return;
+        }
       }
 
-      // If not Owner, check Firestore for Admins
+      // 2. Check Firestore for Admins
       const { collection, getDocs, query, where } = await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
 
@@ -125,84 +116,41 @@ export default function LoginPage() {
           <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-foreground/20 to-transparent"></div>
 
           <div className="p-8 md:p-10">
-            {/* Mode Toggle Switch */}
-            <div className="flex bg-surface-alt/70 rounded-xl p-1 mb-8 border border-border/50 relative">
-              {/* Highlight background */}
-              <div 
-                className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-background rounded-lg shadow-sm transition-transform duration-300 ease-out`}
-                style={{ transform: mode === "staff" ? "translateX(0)" : "translateX(100%)", left: "4px" }}
-              ></div>
-              
-              <button
-                type="button"
-                onClick={() => { setMode("staff"); setError(""); }}
-                className={`flex-1 py-2.5 text-sm font-sans font-medium transition-colors cursor-pointer z-10 rounded-lg ${
-                  mode === "staff" ? "text-foreground" : "text-foreground/50 hover:text-foreground/80"
-                }`}
-              >
-                Portal Tim
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode("client"); setError(""); }}
-                className={`flex-1 py-2.5 text-sm font-sans font-medium transition-colors cursor-pointer z-10 rounded-lg ${
-                  mode === "client" ? "text-foreground" : "text-foreground/50 hover:text-foreground/80"
-                }`}
-              >
-                Portal Klien
-              </button>
-            </div>
-
             <form onSubmit={handleLogin} className="space-y-6">
-              {mode === "client" ? (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                  <label className="block text-xs font-sans tracking-wider text-foreground/50 uppercase mb-2">Kode Akses Project</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
-                    placeholder="Contoh: ZY-2409-XXX"
-                    className="w-full px-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-mono"
-                  />
-                  <p className="text-xs text-foreground/40 mt-3 font-sans text-center">Kode dikirimkan via pesan WhatsApp.</p>
-                </div>
-              ) : (
-                <div className="space-y-5 animate-in fade-in slide-in-from-left-4 duration-500">
-                  <div>
-                    <label className="block text-xs font-sans tracking-wider text-foreground/50 uppercase mb-2">Username</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                      </div>
-                      <input 
-                        type="text" 
-                        required
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Ketik username Anda..."
-                        className="w-full pl-11 pr-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-sans"
-                      />
+              <div className="space-y-5 animate-in fade-in slide-in-from-left-4 duration-500">
+                <div>
+                  <label className="block text-xs font-sans tracking-wider text-foreground/50 uppercase mb-2">Email Owner / Username Admin</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-sans tracking-wider text-foreground/50 uppercase mb-2">Kata Sandi</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                      </div>
-                      <input 
-                        type="password" 
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full pl-11 pr-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-sans"
-                      />
-                    </div>
+                    <input 
+                      type="text" 
+                      required
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Email atau username..."
+                      className="w-full pl-11 pr-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-sans"
+                    />
                   </div>
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs font-sans tracking-wider text-foreground/50 uppercase mb-2">Kata Sandi</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    </div>
+                    <input 
+                      type="password" 
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-11 pr-5 py-4 bg-background/50 border border-border rounded-xl text-foreground placeholder-foreground/30 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all font-sans"
+                    />
+                  </div>
+                </div>
+              </div>
 
               {error && (
                 <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-sm font-sans text-center animate-in zoom-in-95 duration-300">
@@ -221,7 +169,7 @@ export default function LoginPage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 ) : (
-                  mode === "client" ? "Buka Galeri Klien" : "Masuk ke Sistem"
+                  "Masuk ke Sistem"
                 )}
               </button>
             </form>

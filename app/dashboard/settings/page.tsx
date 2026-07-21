@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-import PortfolioSettings from "@/components/PortfolioSettings";
+
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 
@@ -12,7 +12,8 @@ export type PriceItem = {
   name: string;
   price: number;
   unit: string;
-  isSystem?: boolean; 
+  isSystem?: boolean;
+  scheme?: 'berbayar' | 'sudah bayar';
 };
 
 const DEFAULT_PRICELIST: PriceItem[] = [
@@ -23,8 +24,13 @@ const DEFAULT_PRICELIST: PriceItem[] = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'portofolio' | 'panduan'>('profil');
+  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'panduan' | 'lanjutan'>('profil');
   const router = useRouter();
+
+  // --- LANJUTAN / RESET DATA STATE ---
+  const [isResettingExpenses, setIsResettingExpenses] = useState(false);
+  const [isResettingAll, setIsResettingAll] = useState(false);
+  const [isResettingAnalytics, setIsResettingAnalytics] = useState(false);
 
   useEffect(() => {
     const role = localStorage.getItem("zeey_auth_role");
@@ -36,10 +42,23 @@ export default function SettingsPage() {
   const [priceList, setPriceList] = useState<PriceItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PriceItem | null>(null);
-  const [formData, setFormData] = useState({ name: "", price: "", unit: "" });
+  const [formData, setFormData] = useState({ name: "", price: "", unit: "", scheme: "berbayar" });
 
   // --- PROFIL STATE ---
-  const [profile, setProfile] = useState({ studioName: "Zeey Studio", waNumber: "", logoUrl: "" });
+  const [profile, setProfile] = useState({
+    studioName: "Zeey Studio",
+    waNumber: "",
+    logoUrl: "",
+    address: "",
+    email: "",
+    instagram: "",
+    tiktok: "",
+    openHours: "",
+    termsConditions: "",
+    tagline: "",
+    brandColor: "#6366f1",
+    welcomeMessage: ""
+  });
   const [isProfileSaved, setIsProfileSaved] = useState(false);
 
   // --- PEMBAYARAN STATE ---
@@ -128,6 +147,13 @@ export default function SettingsPage() {
     querySnapshot.docs.forEach(d => {
       const data = d.data();
       const itemId = data.id || d.id;
+      
+      // Auto-fix bug: accidentally flagged as system in DB
+      if ((itemId === "print_album" || itemId === "softcopy_all") && data.isSystem) {
+        data.isSystem = false;
+        updateDoc(doc(db, "pricelist", d.id), { isSystem: false }); // Update DB di background
+      }
+
       if (!pricesMap.has(itemId)) {
         pricesMap.set(itemId, { ...data, id: itemId } as PriceItem);
       }
@@ -140,10 +166,10 @@ export default function SettingsPage() {
   const handleOpenModal = (item?: PriceItem) => {
     if (item) {
       setEditingItem(item);
-      setFormData({ name: item.name, price: item.price.toString(), unit: item.unit });
+      setFormData({ name: item.name, price: item.price.toString(), unit: item.unit, scheme: item.scheme || "berbayar" });
     } else {
       setEditingItem(null);
-      setFormData({ name: "", price: "", unit: "" });
+      setFormData({ name: "", price: "", unit: "", scheme: "berbayar" });
     }
     setIsModalOpen(true);
   };
@@ -156,7 +182,7 @@ export default function SettingsPage() {
   const handlePriceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const priceValue = parseInt(formData.price.toString().replace(/[^0-9]/g, "")) || 0;
-    
+
     try {
       if (editingItem) {
         // Update in Firestore. We need the document id.
@@ -164,6 +190,7 @@ export default function SettingsPage() {
           name: formData.name,
           price: priceValue,
           unit: formData.unit,
+          scheme: formData.scheme,
           isSystem: editingItem.isSystem || false
         }, { merge: true });
       } else {
@@ -171,10 +198,11 @@ export default function SettingsPage() {
           name: formData.name,
           price: priceValue,
           unit: formData.unit,
+          scheme: formData.scheme,
           isSystem: false
         });
       }
-      
+
       const { logActivity } = await import("@/lib/audit");
       await logActivity("Harga", editingItem ? `Mengubah harga ${formData.name}` : `Menambahkan harga baru ${formData.name}`);
 
@@ -224,11 +252,76 @@ export default function SettingsPage() {
   };
 
 
+  // --- LANJUTAN HANDLERS ---
+  const handleResetFinanceData = async (type: 'expenses' | 'all') => {
+    const message = type === 'expenses'
+      ? "Ketik 'RESET' untuk menghapus seluruh data PENGELUARAN."
+      : "PERINGATAN KERAS: Ketik 'RESET SEMUA' untuk menghapus seluruh data PENGELUARAN dan PESANAN (Proyek). Seluruh data proyek dan klien akan hilang!";
+
+    const confirmText = prompt(message);
+    const expectedText = type === 'expenses' ? 'RESET' : 'RESET SEMUA';
+
+    if (confirmText === expectedText) {
+      if (type === 'expenses') setIsResettingExpenses(true);
+      else setIsResettingAll(true);
+
+      try {
+        const expensesSnap = await getDocs(collection(db, "expenses"));
+        const expensePromises = expensesSnap.docs.map(d => deleteDoc(doc(db, "expenses", d.id)));
+        await Promise.all(expensePromises);
+
+        if (type === 'all') {
+          const projectsSnap = await getDocs(collection(db, "projects"));
+          const projectPromises = projectsSnap.docs.map(d => deleteDoc(doc(db, "projects", d.id)));
+          await Promise.all(projectPromises);
+        }
+
+        const { logActivity } = await import("@/lib/audit");
+        await logActivity("Keuangan", type === 'expenses' ? "Mereset data pengeluaran" : "Mereset seluruh data keuangan dan pesanan");
+
+        alert("Data berhasil direset.");
+      } catch (err) {
+        console.error(err);
+        alert("Gagal mereset data.");
+      } finally {
+        setIsResettingExpenses(false);
+        setIsResettingAll(false);
+      }
+    } else if (confirmText !== null) {
+      alert("Konfirmasi tidak sesuai. Dibatalkan.");
+    }
+  };
+
+  const handleResetAnalyticsData = async () => {
+    const confirmText = prompt("PERINGATAN: Ketik 'RESET ANALITIK' untuk menghapus seluruh data proyek dan pesanan yang tampil di Dasbor Analitik.");
+
+    if (confirmText === 'RESET ANALITIK') {
+      setIsResettingAnalytics(true);
+      try {
+        const projectsSnap = await getDocs(collection(db, "projects"));
+        const projectPromises = projectsSnap.docs.map(d => deleteDoc(doc(db, "projects", d.id)));
+        await Promise.all(projectPromises);
+
+        const { logActivity } = await import("@/lib/audit");
+        await logActivity("Sistem", "Mereset data Dasbor Analitik (menghapus semua proyek/pesanan)");
+
+        alert("Data analitik berhasil direset.");
+      } catch (err) {
+        console.error(err);
+        alert("Gagal mereset data analitik.");
+      } finally {
+        setIsResettingAnalytics(false);
+      }
+    } else if (confirmText !== null) {
+      alert("Konfirmasi tidak sesuai. Dibatalkan.");
+    }
+  };
+
   // --- ADMIN HANDLERS ---
   const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAdminLoading(true);
-    
+
     const adminPayload = {
       username: adminForm.username,
       name: adminForm.name,
@@ -256,7 +349,7 @@ export default function SettingsPage() {
           createdAt: new Date().toISOString()
         });
       }
-      
+
       const { logActivity } = await import("@/lib/audit");
       await logActivity("Admin", editingAdminId ? `Mengubah data admin ${adminForm.username}` : `Menambahkan admin baru ${adminForm.username}`);
 
@@ -275,7 +368,7 @@ export default function SettingsPage() {
     setAdminForm({
       username: admin.username,
       name: admin.name,
-      password: "", 
+      password: "",
       role: "admin",
       accesses: admin.accesses || (admin.role === "admin_editor" ? ["editor", "portfolio"] : ["bookings", "portfolio"]),
       commission: admin.commission ? admin.commission.toString() : "",
@@ -286,7 +379,7 @@ export default function SettingsPage() {
       kpiTarget: admin.kpiTarget ? admin.kpiTarget.toString() : ""
     });
     setEditingAdminId(admin.id);
-    
+
     // Scroll to form (optional UX)
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -321,56 +414,54 @@ export default function SettingsPage() {
 
         {/* Custom Tabs */}
         <div className="flex flex-wrap gap-2 mb-8 border-b border-border/50 pb-1 font-sans overflow-x-auto hide-scrollbar">
-          <button 
-            onClick={() => setActiveTab('profil')} 
+          <button
+            onClick={() => setActiveTab('profil')}
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'profil' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Profil Studio
           </button>
-          <button 
-            onClick={() => setActiveTab('pembayaran')} 
+          <button
+            onClick={() => setActiveTab('pembayaran')}
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'pembayaran' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Metode Pembayaran
           </button>
-          <button 
-            onClick={() => setActiveTab('harga')} 
+          <button
+            onClick={() => setActiveTab('harga')}
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'harga' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Daftar Harga
           </button>
-          <button 
-            onClick={() => setActiveTab('admin')} 
+          <button
+            onClick={() => setActiveTab('admin')}
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'admin' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Akun Admin
           </button>
-          <button 
-            onClick={() => setActiveTab('portofolio')} 
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'portofolio' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Galeri Portofolio
-          </button>
-          <button 
-            onClick={() => setActiveTab('panduan')} 
+
+          <button
+            onClick={() => setActiveTab('panduan')}
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'panduan' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Panduan & Bantuan
           </button>
+          <button
+            onClick={() => setActiveTab('lanjutan')}
+            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'lanjutan' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
+          >
+            Lanjutan (Sistem)
+          </button>
 
         </div>
 
-        {/* Tab Content: Portofolio */}
-        {activeTab === 'portofolio' && (
-          <PortfolioSettings />
-        )}
+
 
         {/* Tab Content: Panduan */}
         {activeTab === 'panduan' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
               <h2 className="text-2xl font-serif mb-6 border-b border-border/50 pb-4">Panduan Penggunaan Google Drive</h2>
-              
+
               <div className="space-y-8 font-sans">
                 {/* Langkah 1 */}
                 <div className="flex gap-4 items-start">
@@ -428,50 +519,229 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* Tab Content: Lanjutan */}
+        {activeTab === 'lanjutan' && (
+          <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2">
+            <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4 text-red-600 flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              Pengaturan Lanjutan (Zona Berbahaya)
+            </h2>
+            <div className="space-y-6 max-w-xl font-sans">
+              <div className="border border-red-200 bg-red-50/30 p-5 md:p-6 rounded-2xl">
+                <h3 className="text-lg font-medium text-red-800 mb-2">Reset Data Keuangan & Bisnis</h3>
+                <p className="text-sm text-red-600/80 mb-6 leading-relaxed">
+                  Fitur ini digunakan untuk menghapus permanen data pada halaman <strong>Keuangan & Bisnis</strong>.
+                  Silakan pilih jenis data yang ingin direset.
+                  <br /><br />
+                  <strong>Peringatan:</strong> Data yang sudah dihapus tidak dapat dikembalikan.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => handleResetFinanceData('expenses')}
+                    disabled={isResettingExpenses || isResettingAll}
+                    className="bg-red-600 text-white px-5 py-3 rounded-xl font-medium hover:bg-red-700 transition-all cursor-pointer shadow-sm text-sm disabled:opacity-70 flex items-center justify-center gap-2 w-full md:w-auto"
+                  >
+                    {isResettingExpenses ? "Menghapus..." : "Reset Hanya Data Pengeluaran"}
+                  </button>
+                  <button
+                    onClick={() => handleResetFinanceData('all')}
+                    disabled={isResettingExpenses || isResettingAll}
+                    className="bg-transparent border border-red-600 text-red-700 px-5 py-3 rounded-xl font-medium hover:bg-red-50 transition-all cursor-pointer shadow-sm text-sm disabled:opacity-70 flex items-center justify-center gap-2 w-full md:w-auto mt-2"
+                  >
+                    {isResettingAll ? "Menghapus..." : "Reset Semua (Pengeluaran & Data Pesanan/Proyek)"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-red-200 bg-red-50/30 p-5 md:p-6 rounded-2xl">
+                <h3 className="text-lg font-medium text-red-800 mb-2">Reset Dasbor Analitik (Ringkasan Studio)</h3>
+                <p className="text-sm text-red-600/80 mb-6 leading-relaxed">
+                  Fitur ini akan mereset data metrik kinerja pada Dasbor Utama (Ringkasan Studio).
+                  Ini berarti <strong>seluruh data Pesanan/Proyek klien akan dihapus</strong> dari sistem untuk memulai grafik dari angka 0.
+                </p>
+                <button
+                  onClick={handleResetAnalyticsData}
+                  disabled={isResettingAnalytics}
+                  className="bg-red-600 text-white px-5 py-3 rounded-xl font-medium hover:bg-red-700 transition-all cursor-pointer shadow-sm text-sm disabled:opacity-70 flex items-center justify-center gap-2 w-full md:w-auto"
+                >
+                  {isResettingAnalytics ? "Menghapus..." : "Reset Data Dasbor Analitik"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Tab Content: Profil */}
         {activeTab === 'profil' && (
-          <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2">
-            <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4">Informasi Studio</h2>
-            <form onSubmit={saveProfile} className="space-y-6 max-w-xl font-sans">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-foreground/80">Nama Studio</label>
-                <input 
-                  type="text" 
-                  value={profile.studioName}
-                  onChange={(e) => setProfile({...profile, studioName: e.target.value})}
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                  placeholder="Contoh: Zeey Studio"
-                />
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-surface border border-border rounded-3xl shadow-sm overflow-hidden">
+              <div className="p-5 md:p-8 border-b border-border bg-surface-alt/30">
+                <h2 className="text-xl md:text-2xl font-serif text-foreground">Informasi Studio</h2>
+                <p className="text-sm text-foreground/60 mt-1">Atur profil dasar, kontak, dan operasional studio Anda.</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2 text-foreground/80">Nomor WhatsApp Admin</label>
-                <input 
-                  type="text" 
-                  value={profile.waNumber}
-                  onChange={(e) => setProfile({...profile, waNumber: e.target.value})}
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                  placeholder="Contoh: 628123456789"
-                />
-                <p className="text-xs text-foreground/50 mt-2">Nomor ini akan digunakan sebagai tujuan kontak dari klien.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2 text-foreground/80">URL Logo Studio (Opsional)</label>
-                <input 
-                  type="text" 
-                  value={profile.logoUrl}
-                  onChange={(e) => setProfile({...profile, logoUrl: e.target.value})}
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                  placeholder="https://..."
-                />
-              </div>
-              
-              <div className="pt-4 flex items-center gap-4">
-                <button type="submit" className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto">
-                  Simpan Profil
-                </button>
-                {isProfileSaved && <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Tersimpan!</span>}
-              </div>
-            </form>
+
+              <form onSubmit={saveProfile} className="p-5 md:p-8 space-y-10 font-sans">
+                {/* Section: Informasi Utama */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                  <div className="md:col-span-2 border-b border-border/50 pb-2 mb-2">
+                    <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                      <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                      Informasi Utama
+                    </h3>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Nama Studio</label>
+                    <input
+                      type="text"
+                      value={profile.studioName || ""}
+                      onChange={(e) => setProfile({ ...profile, studioName: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: Zeey Studio"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Nomor WhatsApp Admin</label>
+                    <input
+                      type="text"
+                      value={profile.waNumber || ""}
+                      onChange={(e) => setProfile({ ...profile, waNumber: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: 628123456789"
+                    />
+                    <p className="text-xs text-foreground/50 mt-2 ml-1">Nomor ini akan digunakan sebagai tujuan kontak dari klien.</p>
+                  </div>
+                </div>
+
+                {/* Section: Kontak & Lokasi */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                  <div className="md:col-span-2 border-b border-border/50 pb-2 mb-2">
+                    <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                      <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                      Kontak & Lokasi
+                    </h3>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Alamat Lengkap / Lokasi (Gmaps)</label>
+                    <textarea
+                      value={profile.address || ""}
+                      onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm min-h-[100px]"
+                      placeholder="Contoh: Jl. Sudirman No. 123, Jakarta"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Email Resmi</label>
+                    <input
+                      type="email"
+                      value={profile.email || ""}
+                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: hello@zeeystudio.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Instagram (Username)</label>
+                    <input
+                      type="text"
+                      value={profile.instagram || ""}
+                      onChange={(e) => setProfile({ ...profile, instagram: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: @zeeystudio"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">TikTok (Username)</label>
+                    <input
+                      type="text"
+                      value={profile.tiktok || ""}
+                      onChange={(e) => setProfile({ ...profile, tiktok: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: @zeeystudio"
+                    />
+                  </div>
+                </div>
+
+                {/* Section: Operasional & Branding */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                  <div className="md:col-span-2 border-b border-border/50 pb-2 mb-2">
+                    <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+                      <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                      Operasional & Branding
+                    </h3>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Jam Operasional</label>
+                    <input
+                      type="text"
+                      value={profile.openHours || ""}
+                      onChange={(e) => setProfile({ ...profile, openHours: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: Senin - Sabtu (09.00 - 17.00 WIB)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Deskripsi Singkat / Slogan</label>
+                    <input
+                      type="text"
+                      value={profile.tagline || ""}
+                      onChange={(e) => setProfile({ ...profile, tagline: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm"
+                      placeholder="Contoh: Mengabadikan Momen Bahagia Anda"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Kebijakan & Syarat Ketentuan (S&K)</label>
+                    <textarea
+                      value={profile.termsConditions || ""}
+                      onChange={(e) => setProfile({ ...profile, termsConditions: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm min-h-[120px]"
+                      placeholder="Contoh: DP tidak dapat dikembalikan jika terjadi pembatalan sepihak..."
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Pesan Sambutan Klien (Kustom)</label>
+                    <textarea
+                      value={profile.welcomeMessage || ""}
+                      onChange={(e) => setProfile({ ...profile, welcomeMessage: e.target.value })}
+                      className="w-full p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all shadow-sm min-h-[100px]"
+                      placeholder="Contoh: Halo! Terima kasih telah mempercayakan momen spesial Anda kepada Zeey Studio..."
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2 text-foreground/80 ml-1">Warna Tema Utama (Brand Color)</label>
+                    <div className="flex gap-4 items-center">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden shadow-sm border border-border">
+                        <input
+                          type="color"
+                          value={profile.brandColor || "#6366f1"}
+                          onChange={(e) => setProfile({ ...profile, brandColor: e.target.value })}
+                          className="absolute inset-[-20%] w-[140%] h-[140%] cursor-pointer border-0 p-0 m-0"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={profile.brandColor || "#6366f1"}
+                        onChange={(e) => setProfile({ ...profile, brandColor: e.target.value })}
+                        className="w-full max-w-[150px] p-4 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all uppercase shadow-sm font-mono text-center"
+                        placeholder="#6366F1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6 mt-10 border-t border-border/50 flex flex-col md:flex-row items-center gap-4 bg-surface-alt/20 -mx-5 -mb-5 md:-mx-8 md:-mb-8 p-5 md:p-8">
+                  <button type="submit" className="w-full md:w-auto bg-accent text-white px-10 py-4 rounded-xl font-bold hover:bg-accent-dark transition-all shadow-md cursor-pointer text-lg">
+                    Simpan Profil Studio
+                  </button>
+                  {isProfileSaved && (
+                    <span className="text-green-600 font-medium flex items-center gap-2 animate-in fade-in bg-green-50 px-4 py-2 rounded-lg border border-green-100">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> 
+                      Perubahan Berhasil Disimpan!
+                    </span>
+                  )}
+                </div>
+              </form>
+            </div>
           </div>
         )}
 
@@ -488,24 +758,24 @@ export default function SettingsPage() {
                   <p className="text-foreground/60 font-sans text-sm">Hubungkan API Cashify Anda untuk memproses QRIS secara otomatis.</p>
                 </div>
               </div>
-              
+
               <form onSubmit={savePayment} className="space-y-6 max-w-xl font-sans">
                 <div>
                   <label className="block text-sm font-medium mb-2 text-foreground/80">Cashify API Key</label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     value={payment.cashifyApiKey}
-                    onChange={(e) => setPayment({...payment, cashifyApiKey: e.target.value})}
+                    onChange={(e) => setPayment({ ...payment, cashifyApiKey: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
                     placeholder="cashify_..."
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2 text-foreground/80">Cashify Webhook Secret</label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     value={payment.cashifyWebhookSecret}
-                    onChange={(e) => setPayment({...payment, cashifyWebhookSecret: e.target.value})}
+                    onChange={(e) => setPayment({ ...payment, cashifyWebhookSecret: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
                     placeholder="cashify_..."
                   />
@@ -513,23 +783,23 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2 text-foreground/80">QRIS Statis (String Lengkap)</label>
-                  <textarea 
+                  <textarea
                     value={payment.qrisString}
-                    onChange={(e) => setPayment({...payment, qrisString: e.target.value})}
+                    onChange={(e) => setPayment({ ...payment, qrisString: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all font-mono text-xs h-32"
                     placeholder="000201010211..."
                   />
                   <p className="text-xs text-foreground/50 mt-2">Dapatkan string QRIS statis dari barcode toko/studio Anda.</p>
                 </div>
-                
+
                 <h3 className="text-lg font-serif pt-6 border-t border-border text-foreground">Metode Transfer Manual (Alternatif)</h3>
-                
+
                 <div>
                   <label className="block text-sm font-medium mb-2 text-foreground/80">Nama Bank / E-Wallet</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={payment.bankName}
-                    onChange={(e) => setPayment({...payment, bankName: e.target.value})}
+                    onChange={(e) => setPayment({ ...payment, bankName: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
                     placeholder="Contoh: BCA"
                   />
@@ -537,26 +807,26 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-2 text-foreground/80">Nomor Rekening</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={payment.accountNumber}
-                      onChange={(e) => setPayment({...payment, accountNumber: e.target.value})}
+                      onChange={(e) => setPayment({ ...payment, accountNumber: e.target.value })}
                       className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
                       placeholder="1234567890"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2 text-foreground/80">Atas Nama</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={payment.accountName}
-                      onChange={(e) => setPayment({...payment, accountName: e.target.value})}
+                      onChange={(e) => setPayment({ ...payment, accountName: e.target.value })}
                       className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
                       placeholder="Zeey Studio"
                     />
                   </div>
                 </div>
-                
+
                 <div className="pt-4 flex items-center gap-4">
                   <button type="submit" className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto">
                     Simpan Pengaturan
@@ -578,14 +848,14 @@ export default function SettingsPage() {
                 <h2 className="text-xl font-serif">Daftar Harga (Price List)</h2>
                 <p className="text-sm text-foreground/60 mt-1">Daftar ini ditampilkan kepada klien di Galeri.</p>
               </div>
-              <button 
+              <button
                 onClick={() => handleOpenModal()}
                 className="bg-accent text-white px-5 py-2.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md text-sm cursor-pointer whitespace-nowrap w-full md:w-auto text-center"
               >
                 + Tambah Item
               </button>
             </div>
-            
+
             <div className="overflow-x-auto">
               <table className="w-full text-left font-sans min-w-[600px]">
                 <thead className="bg-surface-alt/50 text-sm text-foreground/70 border-b border-border">
@@ -602,6 +872,7 @@ export default function SettingsPage() {
                       <td className="p-4 font-medium">
                         {item.name}
                         {item.isSystem && <span className="ml-2 text-xs bg-accent/10 text-accent px-2 py-1 rounded border border-accent/20">Wajib (Sistem)</span>}
+                        {item.scheme === 'sudah bayar' && <span className="ml-2 text-xs bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded border border-emerald-500/20">Sudah Bayar</span>}
                       </td>
                       <td className="p-4 text-foreground/80 font-medium">
                         Rp {item.price.toLocaleString("id-ID")}
@@ -638,30 +909,30 @@ export default function SettingsPage() {
                 <h2 className="text-xl font-serif">Daftar Akun Admin</h2>
                 <p className="text-sm text-foreground/60 mt-1">Kelola akses portal admin untuk tim Anda.</p>
               </div>
-              
+
               <div className="p-5 md:p-6">
                 <form onSubmit={handleAdminSubmit} className="mb-8 p-5 md:p-6 bg-background rounded-2xl border border-border shadow-sm">
                   <h3 className="font-medium mb-4">{editingAdminId ? "Edit Admin" : "Tambah Admin Baru"}</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Username Login</label>
-                      <input type="text" required placeholder="Username" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.username} onChange={e => setAdminForm({...adminForm, username: e.target.value})} />
+                      <input type="text" required placeholder="Username" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.username} onChange={e => setAdminForm({ ...adminForm, username: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Nama Lengkap</label>
-                      <input type="text" required placeholder="Nama Lengkap" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.name} onChange={e => setAdminForm({...adminForm, name: e.target.value})} />
+                      <input type="text" required placeholder="Nama Lengkap" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.name} onChange={e => setAdminForm({ ...adminForm, name: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Password</label>
-                      <input type="password" required={!editingAdminId} placeholder={editingAdminId ? "Kosongkan jika tidak diubah" : "Password"} className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.password} onChange={e => setAdminForm({...adminForm, password: e.target.value})} />
+                      <input type="password" required={!editingAdminId} placeholder={editingAdminId ? "Kosongkan jika tidak diubah" : "Password"} className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.password} onChange={e => setAdminForm({ ...adminForm, password: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">No. WhatsApp</label>
-                      <input type="tel" required placeholder="08123456789" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.waNumber} onChange={e => setAdminForm({...adminForm, waNumber: e.target.value})} />
+                      <input type="tel" required placeholder="08123456789" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.waNumber} onChange={e => setAdminForm({ ...adminForm, waNumber: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Posisi / Spesialisasi</label>
-                      <select className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.specialization} onChange={e => setAdminForm({...adminForm, specialization: e.target.value})}>
+                      <select className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.specialization} onChange={e => setAdminForm({ ...adminForm, specialization: e.target.value })}>
                         <option value="Photographer">Photographer</option>
                         <option value="Videographer">Videographer</option>
                         <option value="Editor">Editor</option>
@@ -672,7 +943,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Status Pekerjaan</label>
-                      <select className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.employmentStatus} onChange={e => setAdminForm({...adminForm, employmentStatus: e.target.value})}>
+                      <select className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.employmentStatus} onChange={e => setAdminForm({ ...adminForm, employmentStatus: e.target.value })}>
                         <option value="Full-time">Full-time</option>
                         <option value="Part-time">Part-time</option>
                         <option value="Freelance">Freelance</option>
@@ -680,18 +951,18 @@ export default function SettingsPage() {
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Informasi Rekening Bank</label>
-                      <input type="text" placeholder="BCA - 12345678 a/n Budi" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.bankInfo} onChange={e => setAdminForm({...adminForm, bankInfo: e.target.value})} />
+                      <input type="text" placeholder="BCA - 12345678 a/n Budi" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.bankInfo} onChange={e => setAdminForm({ ...adminForm, bankInfo: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Komisi per Proyek (Opsional)</label>
-                      <input type="text" placeholder="Misal: 100000" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.commission} onChange={e => setAdminForm({...adminForm, commission: e.target.value})} />
+                      <input type="text" placeholder="Misal: 100000" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.commission} onChange={e => setAdminForm({ ...adminForm, commission: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-xs text-foreground/70 mb-1 ml-1">Target Bulanan (KPI / Sales Target)</label>
-                      <input type="text" placeholder="Misal: 20" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.kpiTarget} onChange={e => setAdminForm({...adminForm, kpiTarget: e.target.value})} />
+                      <input type="text" placeholder="Misal: 20" className="w-full p-3.5 border border-border rounded-xl bg-surface focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all" value={adminForm.kpiTarget} onChange={e => setAdminForm({ ...adminForm, kpiTarget: e.target.value })} />
                     </div>
                   </div>
-                  
+
                   <div className="mt-5 mb-2">
                     <label className="block text-sm font-medium mb-3 text-foreground/80">Hak Akses Modul:</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -699,18 +970,17 @@ export default function SettingsPage() {
                         { id: 'create', label: 'Buat Booking Baru' },
                         { id: 'editor', label: 'Tugas Editor' },
                         { id: 'bookings', label: 'Daftar Pesanan' },
-                        { id: 'portfolio', label: 'Galeri Portofolio' },
                         { id: 'crm', label: 'Data Klien (CRM)' }
                       ].map(module => (
                         <label key={module.id} className="flex items-center gap-2 cursor-pointer text-sm">
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={adminForm.accesses.includes(module.id)}
                             onChange={(e) => {
-                              const newAccesses = e.target.checked 
+                              const newAccesses = e.target.checked
                                 ? [...adminForm.accesses, module.id]
                                 : adminForm.accesses.filter(a => a !== module.id);
-                              setAdminForm({...adminForm, accesses: newAccesses});
+                              setAdminForm({ ...adminForm, accesses: newAccesses });
                             }}
                             className="w-4 h-4 rounded border-border text-accent focus:ring-accent accent-accent"
                           />
@@ -731,53 +1001,73 @@ export default function SettingsPage() {
                   </div>
                 </form>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left font-sans">
-                    <thead className="bg-surface-alt/50 text-sm text-foreground/70">
-                      <tr>
-                        <th className="p-4 font-medium">Username</th>
-                        <th className="p-4 font-medium">Nama</th>
-                        <th className="p-4 font-medium">Hak Akses</th>
-                        <th className="p-4 font-medium text-center">Komisi</th>
-                        <th className="p-4 font-medium text-right">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {adminsList.map((adm) => (
-                        <tr key={adm.id} className="hover:bg-surface-alt/10">
-                          <td className="p-4">
-                            <span className="font-medium text-foreground">{adm.username}</span>
-                          </td>
-                          <td className="p-4 text-foreground/80">{adm.name}</td>
-                          <td className="p-4">
-                            <div className="flex flex-wrap gap-1">
-                              {adm.accesses?.map((acc: string) => (
-                                <span key={acc} className="px-2 py-0.5 bg-accent/10 text-accent rounded text-[10px] uppercase font-bold tracking-wider">
-                                  {acc}
-                                </span>
-                              ))}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {adminsList.map((adm) => (
+                    <div key={adm.id} className="bg-background border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-accent/30 transition-all flex flex-col group relative">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1 pr-3">
+                          <h4 className="font-serif text-lg font-medium text-foreground leading-tight">{adm.name}</h4>
+                          <span className="text-xs text-foreground/50 font-sans mt-1 block">@{adm.username} • {adm.specialization || "Admin"}</span>
+                        </div>
+                        {adm.employmentStatus && (
+                           <span className="shrink-0 text-[10px] px-2.5 py-1 bg-surface-alt border border-border rounded-full text-foreground/70 uppercase tracking-wider font-bold">
+                             {adm.employmentStatus}
+                           </span>
+                        )}
+                      </div>
+
+                      {(adm.commission || adm.kpiTarget || adm.waNumber) && (
+                        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-1 mb-4 text-sm font-sans bg-surface-alt/30 p-3.5 rounded-xl border border-border/50">
+                          {adm.waNumber && (
+                            <div className="w-full mb-1 flex items-center gap-2 text-foreground/70">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                              <span className="text-xs font-medium">{adm.waNumber}</span>
                             </div>
-                          </td>
-                          <td className="p-4 text-center">
-                            {adm.commission && adm.commission > 0 ? (
-                              <span className="text-green-600 font-medium whitespace-nowrap">Rp {adm.commission.toLocaleString("id-ID")}</span>
-                            ) : (
-                              <span className="text-foreground/40">-</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-right whitespace-nowrap">
-                            <button onClick={() => handleEditAdmin(adm)} className="text-sm text-accent hover:text-accent-dark mr-3 cursor-pointer font-medium">Edit</button>
-                            <button onClick={() => handleDeleteAdmin(adm.id)} className="text-sm text-red-600 hover:text-red-800 cursor-pointer font-medium">Hapus</button>
-                          </td>
-                        </tr>
-                      ))}
-                      {adminsList.length === 0 && (
-                        <tr>
-                          <td colSpan={3} className="p-8 text-center text-foreground/50">Belum ada akun admin.</td>
-                        </tr>
+                          )}
+                          {adm.commission && Number(adm.commission) > 0 && (
+                            <div>
+                              <span className="block text-[10px] uppercase font-bold text-foreground/40 tracking-wider">Komisi</span>
+                              <span className="text-green-600 font-medium text-sm">Rp {Number(adm.commission).toLocaleString("id-ID")}</span>
+                            </div>
+                          )}
+                          {adm.kpiTarget && (
+                            <div>
+                              <span className="block text-[10px] uppercase font-bold text-foreground/40 tracking-wider">Target Bulanan</span>
+                              <span className="text-foreground/80 font-medium text-sm">{adm.kpiTarget}</span>
+                            </div>
+                          )}
+                        </div>
                       )}
-                    </tbody>
-                  </table>
+
+                      <div className="mb-6 flex-1">
+                        <span className="block text-[10px] uppercase font-bold text-foreground/40 tracking-wider mb-2">Akses Modul:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {adm.accesses?.length > 0 ? adm.accesses.map((acc: string) => (
+                            <span key={acc} className="px-2 py-1 bg-accent/10 text-accent border border-accent/20 rounded-md text-[10px] uppercase font-bold tracking-wider">
+                              {acc}
+                            </span>
+                          )) : (
+                            <span className="text-xs text-foreground/40 italic">Tidak ada akses khusus</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-4 border-t border-border/50 mt-auto">
+                        <button onClick={() => handleEditAdmin(adm)} className="flex-1 py-2.5 bg-surface hover:bg-surface-alt border border-border text-foreground text-sm font-medium rounded-xl transition-all cursor-pointer">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDeleteAdmin(adm.id)} className="flex-1 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-xl transition-all cursor-pointer border border-red-100">
+                          Hapus
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {adminsList.length === 0 && (
+                    <div className="col-span-full text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border">
+                      <p className="text-foreground/60">Belum ada akun admin.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -794,47 +1084,58 @@ export default function SettingsPage() {
               <form onSubmit={handlePriceSubmit} className="space-y-5 font-sans">
                 <div>
                   <label className="block text-sm font-medium mb-2">Nama Layanan</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     value={formData.name}
-                    onChange={e => setFormData({...formData, name: e.target.value})}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent bg-background transition-all"
                     placeholder="e.g., Cetak Kanvas 40x60"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Harga (Rp)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     required
                     value={formData.price}
-                    onChange={e => setFormData({...formData, price: e.target.value})}
+                    onChange={e => setFormData({ ...formData, price: e.target.value })}
                     className="w-full p-3 border border-border rounded-lg focus:outline-none focus:border-accent bg-background"
                     placeholder="e.g., 250000"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Satuan</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     value={formData.unit}
-                    onChange={e => setFormData({...formData, unit: e.target.value})}
+                    onChange={e => setFormData({ ...formData, unit: e.target.value })}
                     className="w-full p-3 border border-border rounded-lg focus:outline-none focus:border-accent bg-background"
                     placeholder="e.g., per bingkai"
                   />
                 </div>
-                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Skema Harga</label>
+                  <select
+                    value={formData.scheme}
+                    onChange={e => setFormData({ ...formData, scheme: e.target.value })}
+                    className="w-full p-3 border border-border rounded-lg focus:outline-none focus:border-accent bg-background"
+                  >
+                    <option value="berbayar">Berbayar (Akan ditambahkan ke total)</option>
+                    <option value="sudah bayar">Sudah Bayar (Tidak menambah total)</option>
+                  </select>
+                </div>
+
                 <div className="flex gap-4 pt-4 mt-6 border-t border-border">
-                  <button 
+                  <button
                     type="button"
                     onClick={handleCloseModal}
                     className="flex-1 py-3.5 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer font-medium"
                   >
                     Batal
                   </button>
-                  <button 
+                  <button
                     type="submit"
                     className="flex-1 py-3.5 bg-accent text-white rounded-xl hover:bg-accent-dark transition-colors cursor-pointer font-medium shadow-md"
                   >

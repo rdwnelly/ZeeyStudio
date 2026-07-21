@@ -253,223 +253,181 @@ function CreateBookingForm() {
           </p>
         </div>
 
-        <div className="bg-surface border border-border p-6 md:p-8 rounded-3xl shadow-sm">
+        <div className="space-y-6 md:space-y-8">
           {isLoadingData ? (
-             <div className="flex justify-center items-center h-32">
+             <div className="bg-surface border border-border p-6 md:p-8 rounded-3xl shadow-sm flex justify-center items-center h-40">
                <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
              </div>
           ) : (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4">Data Klien</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Nama Klien</label>
-                <input 
-                  type="text" 
-                  required
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="e.g., John & Jane"
-                />
+          <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
+            {/* SECTION 1: DATA KLIEN */}
+            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
+                <div className="bg-accent/10 text-accent p-2.5 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                </div>
+                <h2 className="text-xl font-serif text-foreground">Data Klien</h2>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">WhatsApp Number</label>
-                <input 
-                  type="tel" 
-                  required
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={waNumber}
-                  onChange={(e) => setWaNumber(e.target.value)}
-                  placeholder="e.g., 08123456789"
-                />
-              </div>
-            </div>
+              <div className="p-5 md:p-6 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Nama Klien</label>
+                    <input type="text" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g., John & Jane" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">WhatsApp Number</label>
+                    <input type="tel" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={waNumber} onChange={(e) => setWaNumber(e.target.value)} placeholder="e.g., 08123456789" />
+                  </div>
+                </div>
 
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Tipe Klien</label>
-                <select 
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={clientType}
-                  onChange={(e) => setClientType(e.target.value as any)}
-                >
-                  <option value="Reguler">Reguler</option>
-                  <option value="VIP">VIP</option>
-                  <option value="Blacklist">Blacklist</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Sumber Klien (Lead Source)</label>
-                <select 
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={leadSource}
-                  onChange={(e) => setLeadSource(e.target.value)}
-                  required
-                >
-                  <option value="">-- Pilih Sumber --</option>
-                  <option value="Instagram">Instagram</option>
-                  <option value="TikTok">TikTok</option>
-                  <option value="Referensi Teman">Referensi Teman</option>
-                  <option value="Iklan Facebook/IG">Iklan Facebook/IG</option>
-                  <option value="Walk-in (Datang Langsung)">Walk-in (Datang Langsung)</option>
-                  <option value="Lainnya">Lainnya...</option>
-                </select>
-                {leadSource === "Lainnya" && (
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="Sebutkan sumber klien..."
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all mt-2 animate-in fade-in"
-                    value={customLeadSource}
-                    onChange={(e) => setCustomLeadSource(e.target.value)}
-                  />
-                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Email Klien (Opsional)</label>
+                    <input type="email" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="e.g., client@example.com" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Tipe Klien</label>
+                    <select className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={clientType} onChange={(e) => setClientType(e.target.value as any)}>
+                      <option value="Reguler">Reguler</option>
+                      <option value="VIP">VIP</option>
+                      <option value="Blacklist">Blacklist</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Email Klien (Opsional)</label>
-                <input 
-                  type="email" 
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  placeholder="e.g., client@example.com"
-                />
+            {/* SECTION 2: DETAIL PESANAN & JADWAL */}
+            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
+                <div className="bg-blue-500/10 text-blue-500 p-2.5 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                </div>
+                <h2 className="text-xl font-serif text-foreground">Detail Pesanan & Jadwal</h2>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Akun Instagram / TikTok</label>
-                <input 
-                  type="text" 
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={socialMedia}
-                  onChange={(e) => setSocialMedia(e.target.value)}
-                  placeholder="e.g., @johndoe"
-                />
-              </div>
-            </div>
+              <div className="p-5 md:p-6 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Paket Harga</label>
+                    <select required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={selectedPackage} onChange={(e) => setSelectedPackage(e.target.value)}>
+                      <option value="">-- Pilih Paket --</option>
+                      {priceList.filter(p => !p.isSystem).map(p => (
+                        <option key={p.id} value={p.id}>{p.name} (Rp {p.price.toLocaleString('id-ID')})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Batas Maksimal Pilih Foto</label>
+                    <input type="number" required min="1" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={maxPhotos} onChange={(e) => setMaxPhotos(Number(e.target.value))} placeholder="e.g., 50" />
+                  </div>
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Catatan / Preferensi Khusus</label>
-              <textarea 
-                className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all min-h-[100px]"
-                value={specialNotes}
-                onChange={(e) => setSpecialNotes(e.target.value)}
-                placeholder="e.g., Klien pemalu, konsep vintage, alergi makeup..."
-              />
-            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Tanggal Pemotretan</label>
+                    <input type="date" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={shootDate} onChange={(e) => setShootDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Jam Pemotretan</label>
+                    <input type="time" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={shootTime} onChange={(e) => setShootTime(e.target.value)} />
+                  </div>
+                </div>
 
-            <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4 pt-6">Detail Pesanan</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Paket Harga</label>
-                <select 
-                  required
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={selectedPackage}
-                  onChange={(e) => setSelectedPackage(e.target.value)}
-                >
-                  <option value="">-- Pilih Paket --</option>
-                  {priceList.filter(p => !p.isSystem).map(p => (
-                    <option key={p.id} value={p.id}>{p.name} (Rp {p.price.toLocaleString('id-ID')})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">Batas Maksimal Pilih Foto</label>
-                <input 
-                  type="number" 
-                  required
-                  min="1"
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={maxPhotos}
-                  onChange={(e) => setMaxPhotos(Number(e.target.value))}
-                  placeholder="e.g., 50"
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">DP / Uang Muka (Rp) (Opsional)</label>
+                    <input type="number" min="0" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={dpAmount} onChange={(e) => setDpAmount(Number(e.target.value))} placeholder="e.g., 500000" />
+                    <p className="text-xs text-foreground/50 mt-2 leading-relaxed">Jika klien sudah membayar uang muka (DP), masukkan nominalnya di sini agar terpotong dari total tagihan akhir.</p>
+                  </div>
+                  {authRole === "owner" && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2 text-foreground/80">Tugaskan Fotografer (Admin)</label>
+                      <select className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={assignedAdmin} onChange={(e) => setAssignedAdmin(e.target.value)}>
+                        <option value="">-- Pilih Fotografer --</option>
+                        {adminsList.map(a => (
+                          <option key={a.id} value={a.name}>{a.name} ({a.username})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Tanggal Pemotretan</label>
-                <input 
-                  type="date" 
-                  required
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={shootDate}
-                  onChange={(e) => setShootDate(e.target.value)}
-                />
+            {/* SECTION 3: INFORMASI TAMBAHAN */}
+            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
+                <div className="bg-emerald-500/10 text-emerald-500 p-2.5 rounded-xl">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                </div>
+                <h2 className="text-xl font-serif text-foreground">Informasi Tambahan</h2>
               </div>
+              <div className="p-5 md:p-6 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Sumber Klien (Lead Source)</label>
+                    <select required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={leadSource} onChange={(e) => setLeadSource(e.target.value)}>
+                      <option value="">-- Pilih Sumber --</option>
+                      <option value="Instagram">Instagram</option>
+                      <option value="TikTok">TikTok</option>
+                      <option value="Referensi Teman">Referensi Teman</option>
+                      <option value="Iklan Facebook/IG">Iklan Facebook/IG</option>
+                      <option value="Walk-in (Datang Langsung)">Walk-in (Datang Langsung)</option>
+                      <option value="Lainnya">Lainnya...</option>
+                    </select>
+                    {leadSource === "Lainnya" && (
+                      <input type="text" required placeholder="Sebutkan sumber klien..." className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 mt-3 animate-in fade-in" value={customLeadSource} onChange={(e) => setCustomLeadSource(e.target.value)} />
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">Akun Instagram / TikTok</label>
+                    <input type="text" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={socialMedia} onChange={(e) => setSocialMedia(e.target.value)} placeholder="e.g., @johndoe" />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Jam Pemotretan</label>
-                <input 
-                  type="time" 
-                  required
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={shootTime}
-                  onChange={(e) => setShootTime(e.target.value)}
-                />
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-foreground/80">Catatan / Preferensi Khusus</label>
+                  <textarea className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 min-h-[120px] resize-y" value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} placeholder="e.g., Klien pemalu, konsep vintage, alergi makeup..." />
+                </div>
               </div>
             </div>
-
-            <div className="mt-2">
-              <label className="block text-sm font-medium mb-2">DP / Uang Muka (Rp) (Opsional)</label>
-              <input 
-                type="number" 
-                min="0"
-                className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                value={dpAmount}
-                onChange={(e) => setDpAmount(Number(e.target.value))}
-                placeholder="e.g., 500000"
-              />
-              <p className="text-xs text-foreground/50 mt-1">Jika klien sudah membayar uang muka (DP), masukkan nominalnya di sini agar terpotong dari total tagihan akhir.</p>
-            </div>
-
-            {authRole === "owner" && (
-              <div>
-                <label className="block text-sm font-medium mb-2">Tugaskan Fotografer (Admin)</label>
-                <select 
-                  className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-                  value={assignedAdmin}
-                  onChange={(e) => setAssignedAdmin(e.target.value)}
-                >
-                  <option value="">-- Pilih Fotografer --</option>
-                  {adminsList.map(a => (
-                    <option key={a.id} value={a.name}>{a.name} ({a.username})</option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             {errorMsg && (
-              <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3">
+                <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 {errorMsg}
               </div>
             )}
 
-            <button 
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-accent text-white py-4 rounded-xl font-medium hover:bg-accent-dark transition-all mt-4 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed shadow-md"
-            >
-              {isSubmitting ? 'Memproses...' : (editParam ? 'Simpan Perubahan' : 'Buat Pesanan & Jadwal')}
-            </button>
+            <div className="pt-4">
+              <button 
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-accent text-white py-4 md:py-4.5 rounded-2xl font-medium hover:bg-accent-dark transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-base md:text-lg cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Memproses...
+                  </>
+                ) : (
+                  editParam ? 'Simpan Perubahan' : 'Buat Pesanan & Jadwal'
+                )}
+              </button>
+            </div>
           </form>
           )}
 
           {generatedLink && (
-            <div className="mt-10 p-6 bg-surface-alt border border-border rounded-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <h3 className="text-lg font-serif mb-2">Pesanan Berhasil Dibuat!</h3>
-              
-              <p className="text-sm text-foreground/70 mb-4">Bagikan tautan unik ini kepada klien Anda untuk memantau status pesanan (dan memilih foto nanti):</p>
+            <div className="mt-8 bg-surface border border-border rounded-2xl shadow-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-emerald-500/10 border-b border-border p-5 md:p-6 flex items-center gap-3">
+                <div className="bg-emerald-500 text-white p-2 rounded-full">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <h3 className="text-xl font-serif text-foreground">Pesanan Berhasil Dibuat!</h3>
+              </div>
+              <div className="p-5 md:p-6">
+                <p className="text-sm text-foreground/70 mb-5 leading-relaxed">Bagikan tautan unik ini kepada klien Anda untuk memantau status pesanan (dan memilih foto nanti):</p>
               
               <div className="flex items-center gap-2 mb-6">
                 <input 
@@ -503,6 +461,7 @@ function CreateBookingForm() {
                 >
                   Pratinjau Klien
                 </Link>
+              </div>
               </div>
             </div>
           )}

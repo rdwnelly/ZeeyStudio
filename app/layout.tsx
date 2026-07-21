@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -9,12 +9,27 @@ const inter = Inter({
 
 import { ThemeProvider } from "@/components/ThemeProvider";
 
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export const metadata: Metadata = {
   title: "Zeey Studio | Portal Klien",
   description: "Portal klien fotografi profesional dan sistem manajemen.",
-  manifest: "/manifest.json",
-  themeColor: "#0f172a",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Zeey Studio",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
+
+import { PwaRegistrar } from "@/components/PwaRegistrar";
 
 export default function RootLayout({
   children,
@@ -45,6 +60,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground transition-colors duration-300">
         <ThemeProvider>
           {children}
+          <PwaRegistrar />
         </ThemeProvider>
       </body>
     </html>

@@ -38,6 +38,7 @@ type PriceItem = {
   price: number;
   unit: string;
   isSystem?: boolean;
+  scheme?: 'berbayar' | 'sudah bayar';
 };
 
 const DEFAULT_PRICELIST: PriceItem[] = [
@@ -309,7 +310,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   const addonsCost = Object.entries(selectedAddons).reduce((acc, [id, qty]) => {
     const item = priceList.find(p => p.id === id);
-    if (item) return acc + (item.price * qty);
+    if (item && item.scheme !== 'sudah bayar') return acc + (item.price * qty);
     return acc;
   }, 0);
 
@@ -546,19 +547,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           Pembayaran berhasil dan pilihan foto Anda ({selectedPhotos.size} foto) telah dikonfirmasi. Anda dapat mengunduh foto beresolusi tinggi sekarang.
         </p>
         
-        {project.gdriveLinkHighRes && (
-          <Link
-            href={project.gdriveLinkHighRes}
-            target="_blank"
-            className="bg-accent text-white px-8 py-4 rounded-xl font-medium hover:bg-accent-dark transition-colors shadow-lg font-sans mb-6 flex items-center gap-2 text-lg"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-            </svg>
-            Unduh Folder Original Lengkap (Google Drive)
-          </Link>
-        )}
-        
+
         <div className="flex flex-col gap-4 mb-6">
           <button
             onClick={downloadSelectedZip}
@@ -581,13 +570,6 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             Unduh Daftar Nama File (.txt)
           </button>
         </div>
-
-        <button 
-          onClick={() => window.location.reload()}
-          className="text-accent underline-offset-4 hover:underline"
-        >
-          Kembali ke Galeri
-        </button>
       </div>
     );
   }
@@ -731,6 +713,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               >
                 {/* Elegant border for selected state */}
                 <div className={`absolute inset-0 z-20 pointer-events-none rounded-2xl border-4 transition-colors duration-300 ${isSelected ? 'border-accent' : 'border-transparent'}`}></div>
+                
+                {/* Watermark Anti-Screenshot (Grid) */}
+                <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden opacity-[0.25] mix-blend-overlay flex items-center justify-center">
+                  <div className="transform -rotate-45 font-black text-white text-3xl sm:text-4xl whitespace-nowrap tracking-widest uppercase drop-shadow-lg select-none">
+                    Zeey Studio
+                  </div>
+                </div>
+
                 {photo.thumbnailUrl ? (
                   <SecureImage src={photo.thumbnailUrl} alt={photo.name} />
                 ) : (
@@ -768,6 +758,13 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           
           <div className="relative w-full h-full max-w-5xl flex items-center justify-center overflow-hidden">
             <SecureImage src={viewingPhoto.thumbnailUrl} alt={viewingPhoto.name} isFullscreen={true} />
+            
+            {/* Watermark Anti-Screenshot (Modal Fullscreen) */}
+            <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden opacity-[0.15] mix-blend-overlay flex items-center justify-center">
+               <div className="transform -rotate-45 font-black text-white text-6xl sm:text-7xl md:text-9xl whitespace-nowrap tracking-widest uppercase drop-shadow-2xl select-none">
+                 Zeey Studio
+               </div>
+            </div>
           </div>
           
           <div className="absolute bottom-6 left-0 right-0 text-center text-white/50 text-sm font-sans z-20 pointer-events-none">
@@ -812,8 +809,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   if (!item) return null;
                   return (
                     <div key={id} className="flex justify-between text-sm pb-4 border-b border-border">
-                      <span className="text-foreground/70">{item.name} ({qty} x Rp {item.price.toLocaleString('id-ID')})</span>
-                      <span className="font-medium">Rp {(item.price * qty).toLocaleString('id-ID')}</span>
+                      <span className="text-foreground/70">
+                        {item.name} ({qty} x {item.scheme === 'sudah bayar' ? 'Sudah Dibayar' : `Rp ${item.price.toLocaleString('id-ID')}`})
+                      </span>
+                      <span className={`font-medium ${item.scheme === 'sudah bayar' ? 'text-emerald-600' : ''}`}>
+                        {item.scheme === 'sudah bayar' ? 'Rp 0' : `Rp ${(item.price * qty).toLocaleString('id-ID')}`}
+                      </span>
                     </div>
                   );
                 })}

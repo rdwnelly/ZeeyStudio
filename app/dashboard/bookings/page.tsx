@@ -27,6 +27,7 @@ type Project = {
 export default function BookingsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'aktif' | 'selesai'>('aktif');
 
   const [userRole, setUserRole] = useState("");
   const [userName, setUserName] = useState("");
@@ -37,7 +38,7 @@ export default function BookingsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [creatingFolderId, setCreatingFolderId] = useState<string | null>(null);
-  
+  const [profile, setProfile] = useState<any>({});
   const router = useRouter();
 
   const fetchProjects = async () => {
@@ -81,6 +82,12 @@ export default function BookingsPage() {
 
   useEffect(() => {
     fetchProjects();
+    const savedProfile = localStorage.getItem("zeey_profile");
+    if (savedProfile) {
+      try {
+        setProfile(JSON.parse(savedProfile));
+      } catch (e) {}
+    }
   }, []);
 
   const updateStatus = async (id: string, newStatus: string, extraData: any = {}) => {
@@ -354,14 +361,29 @@ export default function BookingsPage() {
   return (
     <Sidebar>
       <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto w-full animate-in fade-in duration-500 pb-24">
-        <div className="mb-6 border-b border-border/50 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="mb-6 border-b border-border/50 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Manajemen Pesanan</h1>
-            <p className="text-foreground/70 font-sans text-sm md:text-base">
+            <p className="text-foreground/70 font-sans text-sm md:text-base mb-6">
               {userRole === 'owner' ? 'Pantau seluruh jadwal studio dan status pesanan.' : `Jadwal pemotretan yang ditugaskan kepada Anda.`}
             </p>
+            
+            {/* Tabs dipindah ke atas */}
+            <div className="flex gap-2 bg-surface-alt/50 p-1.5 rounded-xl border border-border w-full md:w-auto inline-flex overflow-x-auto hide-scrollbar">
+              <button 
+                onClick={() => setActiveTab('aktif')}
+                className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'aktif' ? 'bg-background shadow-sm border border-border text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
+              >
+                Pesanan Aktif
+              </button>
+              <button 
+                onClick={() => setActiveTab('selesai')}
+                className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'selesai' ? 'bg-background shadow-sm border border-border text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
+              >
+                Riwayat Selesai
+              </button>
+            </div>
           </div>
-
         </div>
 
         {isLoading ? (
@@ -370,28 +392,40 @@ export default function BookingsPage() {
           </div>
         ) : (
           <div className="space-y-12">
-            {/* Kalender Section */}
-            <div className="bg-surface border border-border rounded-3xl p-4 md:p-6 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl md:text-2xl font-serif">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
-              <div className="flex gap-2">
-                <button onClick={prevMonth} className="p-2 border border-border rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">&larr;</button>
-                <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 border border-border rounded-lg hover:bg-surface-alt transition-colors text-sm font-medium cursor-pointer">Hari Ini</button>
-                <button onClick={nextMonth} className="p-2 border border-border rounded-lg hover:bg-surface-alt transition-colors cursor-pointer">&rarr;</button>
-              </div>
-            </div>
             
-            <div className="grid grid-cols-7 border-t border-l border-border rounded-xl overflow-hidden font-sans">
-              {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                <div key={day} className="bg-surface-alt py-2 border-r border-b border-border text-center text-xs font-semibold text-foreground/60">{day}</div>
-              ))}
-              {renderCalendar()}
-            </div>
-          </div>
+            {/* Hanya tampilkan Kalender jika tab aktif */}
+            {activeTab === 'aktif' && (
+              <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 shadow-sm overflow-hidden transition-all hover:shadow-md">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-500/10 text-blue-500 p-2.5 rounded-xl hidden sm:block">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <h2 className="text-xl md:text-2xl font-serif text-foreground">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={prevMonth} className="p-2 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer">&larr;</button>
+                    <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 border border-border rounded-xl hover:bg-surface-alt transition-colors text-sm font-medium cursor-pointer">Hari Ini</button>
+                    <button onClick={nextMonth} className="p-2 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer">&rarr;</button>
+                  </div>
+                </div>
+              
+                <div className="overflow-x-auto pb-2 hide-scrollbar">
+                  <div className="min-w-[700px]">
+                    <div className="grid grid-cols-7 border-t border-l border-border rounded-xl overflow-hidden font-sans">
+                      {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
+                        <div key={day} className="bg-surface-alt py-3 border-r border-b border-border text-center text-xs font-semibold text-foreground/70 uppercase tracking-wider">{day}</div>
+                      ))}
+                      {renderCalendar()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Daftar Pesanan Aktif */}
-          <div>
-            <h2 className="text-2xl font-serif mb-4">Pesanan Aktif</h2>
+          {activeTab === 'aktif' && (
+          <div className="animate-in fade-in duration-300">
             <div className="space-y-4">
               {projects.filter(p => p.status !== 'File Terkirim').length === 0 ? (
                 <div className="text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border">
@@ -399,47 +433,57 @@ export default function BookingsPage() {
                 </div>
               ) : (
                 projects.filter(p => p.status !== 'File Terkirim').map(project => (
-                <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-start hover:border-accent/30 transition-colors">
-                  <div className="flex-1 space-y-3 font-sans w-full">
-                    <div className="flex justify-between items-start mb-1 w-full">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <h3 className="text-xl font-serif font-medium">{project.clientName}</h3>
-                        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
-                          {project.status}
-                        </span>
+                <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-start hover:shadow-md hover:border-accent/30 transition-all">
+                  <div className="flex-1 space-y-4 font-sans w-full">
+                    <div className="flex flex-col sm:flex-row justify-between items-start mb-1 w-full gap-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full">
+                        <h3 className="text-xl md:text-2xl font-serif font-medium text-foreground">{project.clientName}</h3>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-3 py-1.5 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
+                            {project.status}
+                          </span>
+                        </div>
                       </div>
                       
-                      <div className="flex gap-2">
-                        <Link href={`/dashboard/create?edit=${project.id}`} className="p-1 text-foreground/50 hover:text-blue-500 transition-colors bg-surface-alt rounded-md border border-border hover:border-blue-300" title="Edit Pesanan">
+                      <div className="flex gap-2 shrink-0 sm:ml-4 self-end sm:self-auto">
+                        <Link href={`/dashboard/create?edit=${project.id}`} className="p-2 text-foreground/50 hover:text-blue-600 transition-colors bg-surface-alt rounded-lg border border-border hover:border-blue-300 hover:bg-blue-50" title="Edit Pesanan">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         </Link>
-                        <button onClick={() => handleDelete(project.id, project.clientName)} className="p-1 text-foreground/50 hover:text-red-500 transition-colors cursor-pointer bg-surface-alt rounded-md border border-border hover:border-red-300" title="Hapus Pesanan">
+                        <button onClick={() => handleDelete(project.id, project.clientName)} className="p-2 text-foreground/50 hover:text-red-600 transition-colors cursor-pointer bg-surface-alt rounded-lg border border-border hover:border-red-300 hover:bg-red-50" title="Hapus Pesanan">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-3 text-sm text-foreground/80">
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        {project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-foreground/80 bg-surface-alt/30 p-4 rounded-xl border border-border/50">
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <span className="font-medium">{project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        {project.shootTime || '-'}
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <span className="font-medium">{project.shootTime || '-'}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
-                        {project.packageName || '-'}
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                        </div>
+                        <span className="font-medium truncate" title={project.packageName}>{project.packageName || '-'}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        {project.assignedAdmin || '-'}
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        </div>
+                        <span className="font-medium">{project.assignedAdmin || '-'}</span>
                       </div>
                     </div>
                   </div>
                   
-                  <div className="flex flex-col gap-2 min-w-[200px] border-t md:border-t-0 md:border-l border-border pt-4 md:pt-0 md:pl-6">
+                  <div className="flex flex-col gap-3 md:min-w-[240px] border-t md:border-t-0 md:border-l border-border pt-5 md:pt-0 md:pl-6 shrink-0">
                     {/* Status Actions based on Current Status */}
                     {project.status === 'Menunggu Pembayaran' && userRole === 'owner' && (
                       <button onClick={() => updateStatus(project.id, 'Lunas')} className="w-full bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-green-600 transition-colors shadow-sm cursor-pointer">
@@ -524,14 +568,15 @@ export default function BookingsPage() {
                     </div>
                   </div>
                 </div>
-              ))
+                ))
               )}
             </div>
           </div>
+          )}
 
           {/* Daftar Pesanan Selesai */}
-          <div>
-            <h2 className="text-2xl font-serif mb-4 text-foreground/70">Pesanan Selesai</h2>
+          {activeTab === 'selesai' && (
+          <div className="animate-in fade-in duration-300">
             <div className="space-y-4">
               {projects.filter(p => p.status === 'File Terkirim').length === 0 ? (
                 <div className="text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border opacity-75">
@@ -539,36 +584,46 @@ export default function BookingsPage() {
                 </div>
               ) : (
                 projects.filter(p => p.status === 'File Terkirim').map(project => (
-                  <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-center hover:border-accent/30 transition-colors opacity-75">
-                    <div className="flex-1 space-y-3 font-sans">
-                      <div className="flex items-center gap-3 mb-1 flex-wrap">
-                        <h3 className="text-xl font-serif font-medium">{project.clientName}</h3>
-                        <span className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
-                          {project.status}
-                        </span>
+                  <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-center hover:border-accent/30 transition-all opacity-80 hover:opacity-100">
+                    <div className="flex-1 space-y-4 font-sans w-full">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full mb-1">
+                        <h3 className="text-xl md:text-2xl font-serif font-medium text-foreground">{project.clientName}</h3>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-3 py-1.5 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
+                            {project.status}
+                          </span>
+                        </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-3 text-sm text-foreground/80">
-                        <div className="flex items-center gap-1">
-                          <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                          {project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-foreground/70 bg-surface-alt/30 p-4 rounded-xl border border-border/50">
+                        <div className="flex items-center gap-2.5">
+                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                          </div>
+                          <span>{project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                          {project.shootTime || '-'}
+                        <div className="flex items-center gap-2.5">
+                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          </div>
+                          <span>{project.shootTime || '-'}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
-                          {project.packageName || '-'}
+                        <div className="flex items-center gap-2.5">
+                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                          </div>
+                          <span className="truncate" title={project.packageName}>{project.packageName || '-'}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                          {project.assignedAdmin || '-'}
+                        <div className="flex items-center gap-2.5">
+                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                          </div>
+                          <span>{project.assignedAdmin || '-'}</span>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="flex flex-col gap-2 min-w-[200px] border-t md:border-t-0 md:border-l border-border pt-4 md:pt-0 md:pl-6">
+                    <div className="flex flex-col gap-3 md:min-w-[240px] border-t md:border-t-0 md:border-l border-border pt-5 md:pt-0 md:pl-6 shrink-0">
                       <div className="flex gap-2 mt-auto pt-2">
                         <Link href={`/client/${project.id}`} target="_blank" className="flex-1 text-center bg-surface-alt border border-border px-3 py-2 rounded-lg text-sm font-medium hover:bg-border transition-colors">
                           Buka Galeri
@@ -615,10 +670,9 @@ export default function BookingsPage() {
               )}
             </div>
           </div>
-          
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Event Detail Modal */}
       {isModalOpen && selectedProject && (
@@ -739,10 +793,10 @@ export default function BookingsPage() {
                   <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
                   <circle cx="12" cy="13" r="3"></circle>
                 </svg>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>Zeey Studio</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{profile?.studioName || "Zeey Studio"}</h2>
               </div>
-              <p style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#4b5563' }}>Jl. Fotografi No. 123, Jakarta</p>
-              <p style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>hello@zeeystudio.com</p>
+              <p style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#4b5563', whiteSpace: 'pre-wrap' }}>{profile?.address || "Alamat Studio Belum Diatur"}</p>
+              <p style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>{profile?.email || (profile?.waNumber ? `WA: ${profile.waNumber}` : "-")}</p>
             </div>
           </div>
 
@@ -811,11 +865,18 @@ export default function BookingsPage() {
           </div>
 
           <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', marginTop: 'auto', borderTop: '1px solid #e5e7eb', paddingTop: '20px' }}>
-            <p style={{ margin: '0 0 4px 0' }}>Terima kasih telah menggunakan jasa Zeey Studio.</p>
+            <p style={{ margin: '0 0 4px 0' }}>Terima kasih telah menggunakan jasa {profile?.studioName || "Zeey Studio"}.</p>
             <p style={{ margin: 0 }}>Invoice ini sah dan digenerate secara otomatis oleh sistem.</p>
+            {(profile?.instagram || profile?.tiktok) && (
+              <div style={{ marginTop: '8px', fontSize: '13px' }}>
+                {profile?.instagram && <span style={{ marginRight: '10px' }}>IG: {profile.instagram}</span>}
+                {profile?.tiktok && <span>TikTok: {profile.tiktok}</span>}
+              </div>
+            )}
           </div>
         </div>
       )}
+    </div>
     </Sidebar>
   );
 }
