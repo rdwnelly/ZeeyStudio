@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
     const drive = await getDriveService();
     const response = await drive.files.get(
-      { fileId: id, alt: 'media' },
+      { fileId: id, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream' }
     );
 

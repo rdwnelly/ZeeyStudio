@@ -11,7 +11,7 @@ type Project = {
   gdriveLinkHighRes: string;
   maxPhotos: number;
   createdAt: string;
-  driveFolderId?: string;
+  gdriveFolderId?: string;
   status?: 'Menunggu Pemilihan' | 'Selesai';
 };
 

@@ -17,7 +17,7 @@ type Project = {
   gdriveLinkHighRes: string;
   maxPhotos: number;
   createdAt: string;
-  driveFolderId?: string;
+  gdriveFolderId?: string;
   status?: string;
   packagePrice?: number;
   packageName?: string;
@@ -209,9 +209,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         
         setProject(found);
 
-      if (found.driveFolderId) {
+      if (found.gdriveFolderId) {
         try {
-          const res = await fetch(`/api/drive/list-photos?folderId=${found.driveFolderId}`);
+          const res = await fetch(`/api/drive/list-photos?folderId=${found.gdriveFolderId}`);
           const data = await res.json();
           if (res.ok && data.success) {
             setPhotos(data.photos);
