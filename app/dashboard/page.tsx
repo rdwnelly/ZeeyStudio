@@ -16,8 +16,10 @@ type Project = {
   waNumber: string;
   maxPhotos: number;
   createdAt: string;
-  status?: 'Menunggu Pemilihan' | 'Selesai';
+  status?: string;
   extraRevenue?: number;
+  packagePrice?: number;
+  dpAmount?: number;
   completedAt?: string;
   createdBy?: string;
   assignedAdmin?: string;
