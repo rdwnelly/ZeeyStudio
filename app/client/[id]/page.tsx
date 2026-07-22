@@ -583,10 +583,21 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   const downloadTextList = () => {
     if (!project) return;
-    const selectedPhotoArray = photos.filter(p => selectedPhotos.has(p.id));
-    const names = selectedPhotoArray.map(p => p.name).join(", ");
-    const blob = new Blob([names], { type: "text/plain;charset=utf-8" });
-    saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
+
+    // Jika photos sudah dimuat (mode galeri aktif), filter dari state
+    // Jika photos kosong (halaman sukses setelah refresh), gunakan selectedPhotoIds dari Firestore
+    if (photos.length > 0) {
+      const selectedPhotoArray = photos.filter(p => selectedPhotos.has(p.id));
+      const names = selectedPhotoArray.map(p => p.name).join(", ");
+      const blob = new Blob([names], { type: "text/plain;charset=utf-8" });
+      saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
+    } else {
+      // Fallback: hanya tampilkan ID foto karena nama tidak tersedia tanpa memuat ulang
+      const ids = project.selectedPhotoIds || Array.from(selectedPhotos);
+      const text = `Daftar ID Foto Terpilih (${ids.length} foto):\n` + ids.join("\n");
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
+    }
   };
 
   const downloadSelectedZip = async () => {
@@ -594,14 +605,44 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     setIsZipping(true);
     setZipProgress(0);
     const zip = new JSZip();
-    const selectedPhotoArray = photos.filter(p => selectedPhotos.has(p.id));
+
+    // ── FIX: Ketika halaman sukses dibuka langsung (setelah refresh), photos[] kosong ──
+    // Karena galeri tidak dimuat ulang di mode locked. Gunakan selectedPhotoIds dari Firestore
+    // dan fetch foto langsung menggunakan Drive image API.
+    let photosToDownload: { id: string; name: string }[];
+
+    if (photos.length > 0) {
+      // Mode normal: foto sudah ada di state (baru saja konfirmasi di sesi ini)
+      photosToDownload = photos.filter(p => selectedPhotos.has(p.id));
+    } else {
+      // Mode sukses setelah refresh: ambil ID dari Firestore, nama akan diambil dari header response
+      const ids = project.selectedPhotoIds || Array.from(selectedPhotos);
+      photosToDownload = ids.map((id, i) => ({ id, name: `foto_${i + 1}.jpg` }));
+
+      // Coba ambil nama file yang benar dari Drive API
+      if (project.gdriveFolderId) {
+        try {
+          const res = await fetch(`/api/drive/list-photos?folderId=${project.gdriveFolderId}`);
+          const data = await res.json();
+          if (res.ok && data.success && data.photos) {
+            const photoMap = new Map<string, string>(data.photos.map((p: { id: string; name: string }) => [p.id, p.name]));
+            photosToDownload = ids.map((id, i) => ({
+              id,
+              name: photoMap.get(id) || `foto_${i + 1}.jpg`,
+            }));
+          }
+        } catch (e) {
+          console.warn('Gagal mengambil nama foto dari Drive, menggunakan nama default.');
+        }
+      }
+    }
     
     try {
       let count = 0;
       // Fetch in parallel batches of 5 to avoid browser network queue congestion
       const batchSize = 5;
-      for (let i = 0; i < selectedPhotoArray.length; i += batchSize) {
-        const batch = selectedPhotoArray.slice(i, i + batchSize);
+      for (let i = 0; i < photosToDownload.length; i += batchSize) {
+        const batch = photosToDownload.slice(i, i + batchSize);
         await Promise.all(batch.map(async (photo) => {
           try {
             const res = await fetch(`/api/drive/image?id=${photo.id}`);
@@ -613,7 +654,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             console.error("Failed to fetch", photo.name);
           }
           count++;
-          setZipProgress(Math.round((count / selectedPhotoArray.length) * 100));
+          setZipProgress(Math.round((count / photosToDownload.length) * 100));
         }));
       }
       
