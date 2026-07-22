@@ -217,26 +217,38 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         setProject(found);
 
-        // Coba pre-fetch nomor WA untuk tombol konfirmasi manual agar tidak kena popup blocker
+        // Pre-fetch nomor WA untuk tombol konfirmasi manual agar tidak kena popup blocker
+        // Hierarki sumber nomor WA:
+        //   1. settings/profile → waNumber  (Nomor WA Admin di Informasi Studio) — PRIORITAS UTAMA
+        //   2. Admin yang ditetapkan ke project (createdBy / assignedAdmin)      — fallback
+        //   3. Admin mana saja yang terdaftar                                    — last resort
         try {
           let wa = "";
+
+          // 1. Ambil dari Informasi Studio (settings/profile)
           const profileSnap = await getDoc(doc(db, "settings", "profile"));
           if (profileSnap.exists() && profileSnap.data().waNumber) {
             wa = profileSnap.data().waNumber;
           }
+
+          // 2 & 3. Fallback ke koleksi admins jika Informasi Studio belum dikonfigurasi
           if (!wa) {
             const adminsSnap = await getDocs(collection(db, "admins"));
+            let anyAdminWa = "";
             adminsSnap.forEach(d => {
               const adminData = d.data();
-              if (adminData.waNumber) {
-                if (adminData.username === found.createdBy || adminData.username === found.assignedAdmin) {
-                  wa = adminData.waNumber;
-                } else if (!wa) {
-                  wa = adminData.waNumber;
-                }
+              if (!adminData.waNumber) return;
+              // Prioritaskan admin yang ditetapkan ke project ini
+              if (adminData.username === found.createdBy || adminData.username === found.assignedAdmin) {
+                wa = adminData.waNumber;
               }
+              // Simpan sebagai last resort
+              if (!anyAdminWa) anyAdminWa = adminData.waNumber;
             });
+            // Gunakan last resort jika admin terkait tidak punya WA
+            if (!wa) wa = anyAdminWa;
           }
+
           if (wa) {
             const cleanNumber = wa.replace(/\D/g, '').replace(/^0/, '62');
             const message = `Halo Admin, saya ${found.clientName}. Saya ingin mengkonfirmasi pembayaran untuk tagihan foto saya (ID: ${found.id}). Berikut saya lampirkan screenshot bukti transfernya.`;
