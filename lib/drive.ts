@@ -38,12 +38,12 @@ export async function getDriveService() {
  */
 export async function createFolder(folderName: string, parentId?: string): Promise<string | null | undefined> {
   const drive = await getDriveService();
-  
+
   const fileMetadata: any = {
     name: folderName,
     mimeType: 'application/vnd.google-apps.folder',
   };
-  
+
   if (parentId) {
     fileMetadata.parents = [parentId];
   }
@@ -74,7 +74,7 @@ export async function getFolderIdByName(folderName: string): Promise<string | nu
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
     });
-    
+
     const files = res.data.files;
     if (files && files.length > 0) {
       return files[0].id || null;
@@ -102,7 +102,7 @@ export async function getPhotosInFolder(folderId: string) {
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
     });
-    
+
     return res.data.files || [];
   } catch (err) {
     console.error(`Error fetching photos in folder ${folderId}:`, err);

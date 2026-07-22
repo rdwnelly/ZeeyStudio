@@ -62,8 +62,20 @@ export default function SettingsPage() {
   const [isProfileSaved, setIsProfileSaved] = useState(false);
 
   // --- PEMBAYARAN STATE ---
-  // --- PEMBAYARAN STATE ---
-  const [payment, setPayment] = useState({ cashifyApiKey: "", cashifyWebhookSecret: "", qrisString: "", bankName: "", accountNumber: "", accountName: "" });
+  const [payment, setPayment] = useState({
+    // Casaku.id (primary payment integration)
+    casaku_license_key: "",
+    casaku_webhook_secret: "",
+    casaku_qr_id: "",
+    // Legacy Cashify (fallback)
+    cashifyApiKey: "",
+    cashifyWebhookSecret: "",
+    qrisString: "",
+    // Transfer Manual
+    bankName: "",
+    accountNumber: "",
+    accountName: "",
+  });
   const [isPaymentSaved, setIsPaymentSaved] = useState(false);
 
 
@@ -748,50 +760,97 @@ export default function SettingsPage() {
         {/* Tab Content: Pembayaran */}
         {activeTab === 'pembayaran' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+
+            {/* ── Casaku.id Integration Card ─────────────────────────────────── */}
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-accent/10 p-3 rounded-xl text-accent">
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                <div className="bg-emerald-500/10 p-3 rounded-xl text-emerald-600">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6M9 11h3" />
+                  </svg>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-serif mb-1">Integrasi Cashify (QRIS Dinamis)</h2>
-                  <p className="text-foreground/60 font-sans text-sm">Hubungkan API Cashify Anda untuk memproses QRIS secara otomatis.</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-2xl font-serif">Integrasi Casaku.id</h2>
+                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                      Direkomendasikan
+                    </span>
+                  </div>
+                  <p className="text-foreground/60 font-sans text-sm">
+                    Casaku membaca notifikasi saldo masuk di HP Android Anda, lalu memverifikasi pesanan secara otomatis — tanpa payment gateway, tanpa potongan pajak.
+                  </p>
                 </div>
               </div>
 
-              <form onSubmit={savePayment} className="space-y-6 max-w-xl font-sans">
+              {/* Cara Setup */}
+              <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl p-5 mb-6 font-sans">
+                <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Cara Setup Casaku (4 Langkah)
+                </p>
+                <ol className="space-y-2 text-sm text-emerald-700 dark:text-emerald-300">
+                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">1.</span> Daftar di <a href="https://casaku.id" target="_blank" rel="noopener" className="underline font-medium">casaku.id</a> dan upload gambar QRIS statis Anda</li>
+                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">2.</span> Buat API Keys di dashboard Casaku → salin <strong>License Key</strong> dan <strong>QR ID (UUID)</strong></li>
+                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">3.</span> Install app Casaku di HP Android yang menerima notifikasi e-wallet/m-banking</li>
+                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">4.</span> Daftarkan URL Webhook di bawah ke dashboard Casaku</li>
+                </ol>
+              </div>
+
+              <form onSubmit={savePayment} className="space-y-5 max-w-xl font-sans">
+
+                {/* License Key */}
                 <div>
-                  <label className="block text-sm font-medium mb-2 text-foreground/80">Cashify API Key</label>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">License Key</label>
                   <input
+                    id="casaku-license-key"
                     type="password"
-                    value={payment.cashifyApiKey}
-                    onChange={(e) => setPayment({ ...payment, cashifyApiKey: e.target.value })}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                    placeholder="cashify_..."
+                    value={(payment as any).casaku_license_key || ""}
+                    onChange={(e) => setPayment({ ...payment, casaku_license_key: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
+                    placeholder="Dari dashboard Casaku → API Keys"
+                    autoComplete="off"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-foreground/80">Cashify Webhook Secret</label>
-                  <input
-                    type="password"
-                    value={payment.cashifyWebhookSecret}
-                    onChange={(e) => setPayment({ ...payment, cashifyWebhookSecret: e.target.value })}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all"
-                    placeholder="cashify_..."
-                  />
-                  <p className="text-xs text-foreground/50 mt-2">Gunakan URL Webhook: <code className="bg-surface-alt px-1 py-0.5 rounded border border-border">https://domainanda.com/api/webhook/cashify</code></p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-foreground/80">QRIS Statis (String Lengkap)</label>
-                  <textarea
-                    value={payment.qrisString}
-                    onChange={(e) => setPayment({ ...payment, qrisString: e.target.value })}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-all font-mono text-xs h-32"
-                    placeholder="000201010211..."
-                  />
-                  <p className="text-xs text-foreground/50 mt-2">Dapatkan string QRIS statis dari barcode toko/studio Anda.</p>
                 </div>
 
+                {/* Webhook Secret */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Webhook Secret</label>
+                  <input
+                    id="casaku-webhook-secret"
+                    type="password"
+                    value={(payment as any).casaku_webhook_secret || ""}
+                    onChange={(e) => setPayment({ ...payment, casaku_webhook_secret: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
+                    placeholder="Dari dashboard Casaku → Webhook Settings"
+                    autoComplete="off"
+                  />
+                  <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                    <p className="text-xs text-foreground/50">URL Webhook untuk dimasukkan di dashboard Casaku:</p>
+                    <code className="text-xs bg-surface-alt px-2 py-1 rounded-lg border border-border font-mono select-all">
+                      {typeof window !== "undefined" ? window.location.origin : "https://domainanda.com"}/api/webhook/casaku
+                    </code>
+                  </div>
+                </div>
+
+                {/* QR ID */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">QRIS Merchant ID (UUID)</label>
+                  <input
+                    id="casaku-qr-id"
+                    type="text"
+                    value={(payment as any).casaku_qr_id || ""}
+                    onChange={(e) => setPayment({ ...payment, casaku_qr_id: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                  <p className="text-xs text-foreground/50 mt-1.5">UUID QRIS Merchant yang muncul di dashboard Casaku setelah upload QRIS.</p>
+                </div>
+
+                {/* Metode Transfer Manual */}
                 <h3 className="text-lg font-serif pt-6 border-t border-border text-foreground">Metode Transfer Manual (Alternatif)</h3>
 
                 <div>
@@ -828,10 +887,21 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="pt-4 flex items-center gap-4">
-                  <button type="submit" className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto">
+                  <button
+                    type="submit"
+                    id="save-payment-settings-btn"
+                    className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto"
+                  >
                     Simpan Pengaturan
                   </button>
-                  {isPaymentSaved && <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> Tersimpan!</span>}
+                  {isPaymentSaved && (
+                    <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                      Tersimpan!
+                    </span>
+                  )}
                 </div>
               </form>
             </div>
