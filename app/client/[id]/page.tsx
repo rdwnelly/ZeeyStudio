@@ -581,66 +581,95 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     }
   };
 
-  const downloadTextList = () => {
-    if (!project) return;
+  // ── DOWNLOAD HELPERS ──
+  // Selalu ambil selectedPhotoIds terbaru dari Firestore sebagai single source of truth.
+  // Ini mencegah download foto yang salah akibat state tidak sinkron, race condition,
+  // atau klien membuka halaman sukses setelah refresh (photos[] kosong).
+  const getVerifiedPhotosToDownload = async (): Promise<{ id: string; name: string }[] | null> => {
+    if (!project) return null;
 
-    // Jika photos sudah dimuat (mode galeri aktif), filter dari state
-    // Jika photos kosong (halaman sukses setelah refresh), gunakan selectedPhotoIds dari Firestore
-    if (photos.length > 0) {
-      const selectedPhotoArray = photos.filter(p => selectedPhotos.has(p.id));
-      const names = selectedPhotoArray.map(p => p.name).join(", ");
-      const blob = new Blob([names], { type: "text/plain;charset=utf-8" });
-      saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
-    } else {
-      // Fallback: hanya tampilkan ID foto karena nama tidak tersedia tanpa memuat ulang
-      const ids = project.selectedPhotoIds || Array.from(selectedPhotos);
-      const text = `Daftar ID Foto Terpilih (${ids.length} foto):\n` + ids.join("\n");
-      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-      saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
+    // 1. Ambil selectedPhotoIds terbaru langsung dari Firestore
+    let confirmedIds: string[] = [];
+    try {
+      const docSnap = await getDoc(doc(db, 'projects', project.id));
+      if (docSnap.exists()) {
+        confirmedIds = docSnap.data().selectedPhotoIds || [];
+      }
+    } catch (e) {
+      console.error('Gagal fetch selectedPhotoIds dari Firestore:', e);
+      // Fallback ke project state jika Firestore error
+      confirmedIds = project.selectedPhotoIds || Array.from(selectedPhotos);
     }
+
+    if (confirmedIds.length === 0) {
+      alert('Tidak ada foto yang terpilih untuk diunduh.');
+      return null;
+    }
+
+    // 2. Ambil daftar foto yang tersedia di folder Drive klien
+    //    lalu validasi silang: hanya foto yang ADA di folder klien DAN ada di selectedPhotoIds
+    //    yang boleh didownload — mencegah download foto sembarang.
+    let photosToDownload: { id: string; name: string }[] = confirmedIds.map((id, i) => ({
+      id,
+      name: `foto_${i + 1}.jpg`,
+    }));
+
+    if (project.gdriveFolderId) {
+      try {
+        const res = await fetch(`/api/drive/list-photos?folderId=${project.gdriveFolderId}`);
+        const data = await res.json();
+        if (res.ok && data.success && data.photos) {
+          // Buat set ID foto yang benar-benar ada di folder Drive klien
+          const folderPhotoMap = new Map<string, string>(
+            data.photos.map((p: { id: string; name: string }) => [p.id, p.name])
+          );
+          // Filter: hanya ID yang dikonfirmasi Firestore DAN ada di folder Drive
+          const verified = confirmedIds.filter(id => folderPhotoMap.has(id));
+          if (verified.length === 0) {
+            console.warn('Tidak ada foto pilihan yang cocok dengan folder Drive klien.');
+            // Tetap gunakan confirmedIds tanpa nama — lebih aman daripada gagal total
+          } else {
+            photosToDownload = verified.map((id, i) => ({
+              id,
+              name: folderPhotoMap.get(id) || `foto_${i + 1}.jpg`,
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal validasi folder Drive, lanjut dengan nama default.');
+      }
+    }
+
+    return photosToDownload;
+  };
+
+  const downloadTextList = async () => {
+    if (!project) return;
+    const photosToDownload = await getVerifiedPhotosToDownload();
+    if (!photosToDownload) return;
+
+    const names = photosToDownload.map(p => p.name).join(", ");
+    const blob = new Blob([names], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
   };
 
   const downloadSelectedZip = async () => {
     if (!project) return;
     setIsZipping(true);
     setZipProgress(0);
-    const zip = new JSZip();
 
-    // ── FIX: Ketika halaman sukses dibuka langsung (setelah refresh), photos[] kosong ──
-    // Karena galeri tidak dimuat ulang di mode locked. Gunakan selectedPhotoIds dari Firestore
-    // dan fetch foto langsung menggunakan Drive image API.
-    let photosToDownload: { id: string; name: string }[];
-
-    if (photos.length > 0) {
-      // Mode normal: foto sudah ada di state (baru saja konfirmasi di sesi ini)
-      photosToDownload = photos.filter(p => selectedPhotos.has(p.id));
-    } else {
-      // Mode sukses setelah refresh: ambil ID dari Firestore, nama akan diambil dari header response
-      const ids = project.selectedPhotoIds || Array.from(selectedPhotos);
-      photosToDownload = ids.map((id, i) => ({ id, name: `foto_${i + 1}.jpg` }));
-
-      // Coba ambil nama file yang benar dari Drive API
-      if (project.gdriveFolderId) {
-        try {
-          const res = await fetch(`/api/drive/list-photos?folderId=${project.gdriveFolderId}`);
-          const data = await res.json();
-          if (res.ok && data.success && data.photos) {
-            const photoMap = new Map<string, string>(data.photos.map((p: { id: string; name: string }) => [p.id, p.name]));
-            photosToDownload = ids.map((id, i) => ({
-              id,
-              name: photoMap.get(id) || `foto_${i + 1}.jpg`,
-            }));
-          }
-        } catch (e) {
-          console.warn('Gagal mengambil nama foto dari Drive, menggunakan nama default.');
-        }
-      }
-    }
-    
     try {
+      // Dapatkan daftar foto terverifikasi (Firestore → validasi Drive)
+      const photosToDownload = await getVerifiedPhotosToDownload();
+      if (!photosToDownload || photosToDownload.length === 0) {
+        setIsZipping(false);
+        return;
+      }
+
+      const zip = new JSZip();
       let count = 0;
-      // Fetch in parallel batches of 5 to avoid browser network queue congestion
       const batchSize = 5;
+
       for (let i = 0; i < photosToDownload.length; i += batchSize) {
         const batch = photosToDownload.slice(i, i + batchSize);
         await Promise.all(batch.map(async (photo) => {
@@ -649,15 +678,17 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             if (res.ok) {
               const blob = await res.blob();
               zip.file(photo.name, blob);
+            } else {
+              console.error(`Gagal fetch foto: ${photo.name} (${res.status})`);
             }
           } catch (e) {
-            console.error("Failed to fetch", photo.name);
+            console.error("Failed to fetch", photo.name, e);
           }
           count++;
           setZipProgress(Math.round((count / photosToDownload.length) * 100));
         }));
       }
-      
+
       const content = await zip.generateAsync({ type: "blob" });
       saveAs(content, `Foto_Terpilih_${project.clientName.replace(/\s+/g, '_')}.zip`);
     } catch (e) {
