@@ -30,12 +30,24 @@ export async function GET(request: Request) {
     const photos = await getPhotosInFolder(cleanFolderId);
 
     // Map to a cleaner format for the frontend
-    const formattedPhotos = photos.map((photo) => ({
-      id: photo.id,
-      name: photo.name,
-      thumbnailUrl: `/api/drive/image?id=${photo.id}`,
-      fullUrl: `/api/drive/image?id=${photo.id}`,
-    }));
+    const formattedPhotos = photos.map((photo) => {
+      // Use Drive's native thumbnail if available (faster, lower res). 
+      // Drive usually returns =s220. We can change it to a larger size if needed, e.g. =s800
+      let thumbUrl = photo.thumbnailLink;
+      if (thumbUrl) {
+         // Optionally, increase the thumbnail size slightly from default 220px to 800px for better quality on mobile
+         thumbUrl = thumbUrl.replace(/=s\d+$/, '=s800');
+      } else {
+         thumbUrl = `/api/drive/image?id=${photo.id}`;
+      }
+
+      return {
+        id: photo.id,
+        name: photo.name,
+        thumbnailUrl: thumbUrl,
+        fullUrl: `/api/drive/image?id=${photo.id}`,
+      };
+    });
 
     return NextResponse.json({
       success: true,

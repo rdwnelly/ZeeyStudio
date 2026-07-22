@@ -858,7 +858,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           </button>
           
           <div className="relative w-full h-full max-w-5xl flex items-center justify-center overflow-hidden">
-            <SecureImage src={viewingPhoto.thumbnailUrl} alt={viewingPhoto.name} isFullscreen={true} />
+            <SecureImage src={viewingPhoto.fullUrl} alt={viewingPhoto.name} isFullscreen={true} />
             
             {/* Watermark Anti-Screenshot (Modal Fullscreen) */}
             <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden opacity-[0.15] mix-blend-overlay flex items-center justify-center">
