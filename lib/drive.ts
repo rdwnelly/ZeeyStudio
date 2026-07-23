@@ -111,20 +111,22 @@ export async function getPhotosInFolder(folderId: string) {
 }
 
 /**
- * Helper to copy a file in Google Drive.
+ * Helper to create a shortcut to a file in Google Drive.
+ * We use shortcuts instead of copies because Service Accounts have 0 bytes storage quota.
  */
-export async function copyFile(fileId: string, destFolderId: string, newName?: string) {
+export async function createShortcut(fileId: string, destFolderId: string, newName?: string) {
   const drive = await getDriveService();
   try {
     const requestBody: any = {
+      mimeType: 'application/vnd.google-apps.shortcut',
+      shortcutDetails: { targetId: fileId },
       parents: [destFolderId],
     };
     if (newName) {
       requestBody.name = newName;
     }
 
-    const res = await drive.files.copy({
-      fileId: fileId,
+    const res = await drive.files.create({
       requestBody: requestBody,
       fields: 'id, name',
       supportsAllDrives: true,
@@ -132,7 +134,7 @@ export async function copyFile(fileId: string, destFolderId: string, newName?: s
     
     return res.data;
   } catch (err) {
-    console.error(`Error copying file ${fileId}:`, err);
+    console.error(`Error creating shortcut for file ${fileId}:`, err);
     throw err;
   }
 }

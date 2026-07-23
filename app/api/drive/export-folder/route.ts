@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createFolder, copyFile, makeFolderPublic } from '@/lib/drive';
+import { createFolder, createShortcut, makeFolderPublic } from '@/lib/drive';
 
 // We use nodejs runtime because googleapis relies on Node.js core modules
 export const runtime = 'nodejs';
@@ -32,17 +32,16 @@ export async function POST(request: Request) {
     // 2. Make the folder public so the client can access it
     await makeFolderPublic(newFolderId);
 
-    // 3. Copy files to the new folder sequentially to avoid rate limits
-    // Alternatively, we could chunk them, but sequential is safer.
+    // 3. Copy files (as shortcuts) to the new folder sequentially to avoid rate limits
     const results = [];
     for (let i = 0; i < photoIds.length; i++) {
       const fileId = photoIds[i];
       try {
         const newFileName = `foto_${i + 1}.jpg`;
-        await copyFile(fileId, newFolderId, newFileName);
+        await createShortcut(fileId, newFolderId, newFileName);
         results.push({ id: fileId, status: 'success' });
       } catch (err) {
-        console.error(`Failed to copy file ${fileId}:`, err);
+        console.error(`Failed to create shortcut for file ${fileId}:`, err);
         results.push({ id: fileId, status: 'error' });
       }
       
