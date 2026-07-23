@@ -1011,6 +1011,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 onPointerUp={() => endPress(photo.id)}
                 onPointerLeave={cancelPress}
                 onPointerCancel={cancelPress}
+                onTouchMove={cancelPress}
                 onContextMenu={(e) => { e.preventDefault(); cancelPress(); }}
                 className={`relative aspect-[3/4] cursor-pointer group rounded-2xl overflow-hidden transition-all duration-300 ease-out animate-in fade-in ${
                   isSelected ? 'scale-[0.93] shadow-lg shadow-accent/20' : 'hover:scale-[0.98] hover:shadow-md bg-surface-alt'
@@ -1018,8 +1019,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 style={{
                   animationDelay,
                   animationFillMode: 'both',
-                  willChange: 'transform',       // GPU compositing untuk scroll halus
-                  touchAction: 'manipulation',    // Hapus delay 300ms tap di mobile
+                  willChange: 'transform', // GPU compositing untuk scroll halus
                 }}
               >
                 {/* Border selected state */}
