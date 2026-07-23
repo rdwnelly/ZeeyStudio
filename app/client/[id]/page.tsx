@@ -146,6 +146,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   // Per-foto sequential download queue (lebih andal di HP)
   const [dlQueue, setDlQueue] = useState<{ current: number; total: number } | null>(null);
 
+  // Drive Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportLink, setExportLink] = useState<string | null>(null);
+
   // Price List & Addons state
   const [priceList, setPriceList] = useState<PriceItem[]>(DEFAULT_PRICELIST);
   const [selectedAddons, setSelectedAddons] = useState<Record<string, number>>({});
@@ -753,6 +757,43 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     setDlQueue(null);
   }, [project, dlQueue, getVerifiedPhotosToDownload]);
 
+  // ── Fungsi export ke folder Google Drive baru ──
+  const exportToDrive = async () => {
+    if (!project) return;
+    setIsExporting(true);
+    
+    try {
+      const photosToDownload = await getVerifiedPhotosToDownload();
+      if (!photosToDownload || photosToDownload.length === 0) {
+        setIsExporting(false);
+        return;
+      }
+      
+      const res = await fetch('/api/drive/export-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          clientName: project.clientName,
+          photoIds: photosToDownload.map(p => p.id),
+          sourceFolderId: project.gdriveFolderId
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Terjadi kesalahan pada server');
+      }
+      
+      setExportLink(data.folderUrl);
+    } catch (err: any) {
+      console.error('Export gagal:', err);
+      alert('Gagal mengekspor foto ke Drive: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (isLoading) return (
     <div className="min-h-screen bg-background">
       <div className="h-24" />
@@ -789,70 +830,122 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         <div className="flex flex-col gap-3 mb-6 w-full max-w-sm">
 
-          {/* OPSI 1: Download satu per satu — DIREKOMENDASIKAN untuk HP */}
-          <button
-            onClick={downloadPhotosSequentially}
-            disabled={!!dlQueue}
-            className="bg-primary text-white px-8 py-4 rounded-xl font-semibold hover:bg-primary/90 transition-colors shadow-lg font-sans flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
-          >
-            {dlQueue ? (
-              <>
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                Mengunduh {dlQueue.current}/{dlQueue.total} foto...
-              </>
-            ) : (
-              <>
+          {/* JIKA EXPORT DRIVE SELESAI, TAMPILKAN LINKNYA */}
+          {exportLink ? (
+            <div className="bg-green-50 border border-green-200 p-4 rounded-xl text-left animate-in fade-in slide-in-from-bottom-4 mb-2">
+              <p className="text-green-800 text-sm font-semibold mb-2 flex items-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Unduh Foto Satu per Satu ⭐
-              </>
-            )}
-          </button>
-          {dlQueue && (
-            <p className="text-xs text-foreground/50 font-sans text-center animate-pulse -mt-1">
-              Foto masuk ke history download browser Anda 📥 jangan tutup halaman ini
-            </p>
+                Folder Drive Berhasil Dibuat!
+              </p>
+              <p className="text-green-700/80 text-xs mb-4">
+                Foto-foto Anda sekarang tersimpan di folder Google Drive baru. Anda bisa membukanya dan menyimpannya ke akun Google Anda.
+              </p>
+              <a 
+                href={exportLink} 
+                target="_blank" 
+                rel="noreferrer"
+                className="block w-full bg-green-600 text-white text-center py-3 rounded-lg font-medium text-sm shadow-sm hover:bg-green-700 transition-colors touch-manipulation"
+              >
+                Buka Folder Drive Saya
+              </a>
+            </div>
+          ) : (
+            <>
+              {/* OPSI 1: Download ke Folder Drive (BARU) — Paling Nyaman di HP */}
+              <button
+                onClick={exportToDrive}
+                disabled={isExporting || !!dlQueue || isZipping}
+                className="bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-lg font-sans flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation relative overflow-hidden group"
+              >
+                {isExporting ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Menyiapkan Drive Anda...
+                  </>
+                ) : (
+                  <>
+                    {/* Google Drive Logo (Simple SVG) */}
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
+                    </svg>
+                    Simpan ke Google Drive ⭐
+                  </>
+                )}
+                {/* Shine effect */}
+                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
+              </button>
+              {!isExporting && (
+                <p className="text-[11px] text-foreground/50 font-sans text-center -mt-1 px-4 leading-tight">
+                  Disarankan untuk HP. Kami akan membuatkan folder Drive khusus berisi foto Anda.
+                </p>
+              )}
+
+              {/* OPSI 2: Download satu per satu */}
+              <button
+                onClick={downloadPhotosSequentially}
+                disabled={!!dlQueue || isExporting || isZipping}
+                className="bg-surface border border-border text-foreground px-8 py-3.5 rounded-xl font-medium hover:bg-surface-alt transition-colors font-sans flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation mt-2"
+              >
+                {dlQueue ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Mengunduh {dlQueue.current}/{dlQueue.total} foto...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    Unduh Langsung ke HP (Satu per Satu)
+                  </>
+                )}
+              </button>
+              {dlQueue && (
+                <p className="text-xs text-foreground/50 font-sans text-center animate-pulse -mt-1">
+                  Foto masuk ke history download 📥 jangan tutup halaman ini
+                </p>
+              )}
+
+              {/* OPSI 3: Download semua sekaligus (ZIP) */}
+              <button
+                onClick={downloadSelectedZip}
+                disabled={isZipping || !!dlQueue || isExporting}
+                className="bg-surface border border-border text-foreground px-8 py-3.5 rounded-xl font-medium hover:bg-surface-alt transition-colors font-sans flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+              >
+                {isZipping ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    {zipStatus === 'preparing' ? 'Menyiapkan...' : 'Membuat ZIP...'}
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                    </svg>
+                    Unduh ZIP (.zip)
+                  </>
+                )}
+              </button>
+            </>
           )}
 
-          {/* OPSI 2: Download semua sekaligus (ZIP) */}
-          <button
-            onClick={downloadSelectedZip}
-            disabled={isZipping || !!dlQueue}
-            className="bg-surface border border-border text-foreground px-8 py-4 rounded-xl font-medium hover:bg-surface-alt transition-colors font-sans flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-          >
-            {isZipping ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                {zipStatus === 'preparing' ? 'Menyiapkan...' : 'Membuat ZIP...'}
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                </svg>
-                Unduh Semua Sekaligus (.zip)
-              </>
-            )}
-          </button>
-          {isZipping && (
-            <p className="text-xs text-foreground/50 font-sans text-center animate-pulse -mt-1">
-              Server sedang menyiapkan ZIP, mohon tunggu...
-            </p>
-          )}
-
-          {/* OPSI 3: Daftar nama file */}
+          {/* OPSI 4: Daftar nama file */}
           <button
             onClick={downloadTextList}
-            className="text-foreground/50 text-xs font-sans underline underline-offset-2 text-center py-2 touch-manipulation"
+            className="text-foreground/40 hover:text-foreground/70 text-xs font-sans underline underline-offset-2 text-center py-2 touch-manipulation mt-2 transition-colors"
           >
-            Unduh daftar nama file saja (.txt)
+            Hanya unduh daftar nama file (.txt)
           </button>
         </div>
       </div>

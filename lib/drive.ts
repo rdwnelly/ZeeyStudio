@@ -109,3 +109,50 @@ export async function getPhotosInFolder(folderId: string) {
     throw err;
   }
 }
+
+/**
+ * Helper to copy a file in Google Drive.
+ */
+export async function copyFile(fileId: string, destFolderId: string, newName?: string) {
+  const drive = await getDriveService();
+  try {
+    const requestBody: any = {
+      parents: [destFolderId],
+    };
+    if (newName) {
+      requestBody.name = newName;
+    }
+
+    const res = await drive.files.copy({
+      fileId: fileId,
+      requestBody: requestBody,
+      fields: 'id, name',
+      supportsAllDrives: true,
+    });
+    
+    return res.data;
+  } catch (err) {
+    console.error(`Error copying file ${fileId}:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Helper to make a folder (or file) public "Anyone with the link can view".
+ */
+export async function makeFolderPublic(folderId: string) {
+  const drive = await getDriveService();
+  try {
+    await drive.permissions.create({
+      fileId: folderId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+      supportsAllDrives: true,
+    });
+  } catch (err) {
+    console.error(`Error making folder ${folderId} public:`, err);
+    throw err;
+  }
+}
