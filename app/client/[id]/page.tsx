@@ -830,6 +830,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         <div className="flex flex-col gap-3 mb-6 w-full max-w-sm">
 
+          {/* Pesan Sabar Saat Proses */}
+          {(dlQueue || isZipping || isExporting) && (
+            <div className="bg-orange-50/80 border border-orange-200 text-orange-800 text-xs px-4 py-3 rounded-xl mb-2 text-center animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm backdrop-blur-sm">
+              <p>Harap bersabar pada saat proses pendownloadan foto, memakan waktu sedikit lama sesuai kecepatan internet Anda dan banyaknya foto yang dipilih.</p>
+              <p className="font-semibold italic mt-1">"Orang sabar disayang Tuhan" 😇</p>
+            </div>
+          )}
+
           {/* JIKA EXPORT DRIVE SELESAI, TAMPILKAN LINKNYA */}
           {exportLink ? (
             <div className="bg-green-50 border border-green-200 p-4 rounded-xl text-left animate-in fade-in slide-in-from-bottom-4 mb-2">
