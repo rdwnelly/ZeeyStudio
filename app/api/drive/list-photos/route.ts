@@ -31,20 +31,23 @@ export async function GET(request: Request) {
 
     // Map to a cleaner format for the frontend
     const formattedPhotos = photos.map((photo) => {
-      // Use Drive's native thumbnail if available (faster, lower res). 
-      // Drive usually returns =s220. We can change it to a larger size if needed, e.g. =s800
-      let thumbUrl = photo.thumbnailLink;
-      if (thumbUrl) {
-        // Optionally, increase the thumbnail size slightly from default 220px to 800px for better quality on mobile
-        thumbUrl = thumbUrl.replace(/=s\d+$/, '=s800');
-      } else {
-        thumbUrl = `/api/drive/image?id=${photo.id}`;
-      }
+      const baseThumb = photo.thumbnailLink || null;
+
+      // Gallery thumbnail: s400 — cukup untuk grid 2-column mobile, 4× lebih ringan dari s800
+      let thumbUrl = baseThumb
+        ? baseThumb.replace(/=s\d+$/, '=s400')
+        : `/api/drive/image?id=${photo.id}`;
+
+      // Preview (fullscreen tap): s1200 — resolusi tinggi, tanpa perlu server proxy
+      let previewUrl = baseThumb
+        ? baseThumb.replace(/=s\d+$/, '=s1200')
+        : `/api/drive/image?id=${photo.id}`;
 
       return {
         id: photo.id,
         name: photo.name,
         thumbnailUrl: thumbUrl,
+        previewUrl: previewUrl,
         fullUrl: `/api/drive/image?id=${photo.id}`,
       };
     });
