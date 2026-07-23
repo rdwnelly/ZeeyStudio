@@ -80,50 +80,31 @@ const SecureImage = memo(({ src, alt, isFullscreen = false }: { src: string, alt
 });
 SecureImage.displayName = "SecureImage";
 
-// ── LazyImage: hanya load gambar saat masuk viewport ──
-// Menggunakan IntersectionObserver SATU observer per instance,
-// tapi observer langsung disconnect setelah foto masuk viewport (tidak persisten).
+// ── LazyImage: skeleton + native browser lazy loading ──
+// Menggunakan browser native loading="lazy" (didukung semua HP modern:
+// Chrome 77+, Firefox 75+, Safari 15.4+) — lebih reliable dari IntersectionObserver
+// manual yang bermasalah di React Strict Mode (double-mount cleanup race condition).
 const LazyImage = memo(({ src, alt }: { src: string; alt: string }) => {
-  const [inView, setInView] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setInView(true);
-          observer.disconnect(); // Disconnect immediately — tidak perlu tetap observe
-        }
-      },
-      { rootMargin: '300px' } // Mulai load 300px sebelum masuk viewport
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   return (
-    <div ref={ref} className="relative w-full h-full">
-      {/* Skeleton placeholder selama belum loaded */}
+    <div className="relative w-full h-full">
+      {/* Skeleton pulse selama gambar belum selesai load */}
       {!loaded && (
         <div className="absolute inset-0 bg-surface-alt animate-pulse rounded-xl" />
       )}
-      {inView && (
-        <img
-          src={src}
-          alt={alt}
-          className={`w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
-            loaded ? 'opacity-100' : 'opacity-0'
-          }`}
-          loading="lazy"
-          decoding="async"
-          onLoad={() => setLoaded(true)}
-          onContextMenu={(e) => e.preventDefault()}
-          onDragStart={(e) => e.preventDefault()}
-        />
-      )}
+      <img
+        src={src}
+        alt={alt}
+        className={`w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
+          loaded ? 'opacity-100' : 'opacity-0'
+        }`}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onContextMenu={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+      />
     </div>
   );
 });
