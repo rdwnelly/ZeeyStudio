@@ -35,10 +35,10 @@ export async function GET(request: Request) {
       // Drive usually returns =s220. We can change it to a larger size if needed, e.g. =s800
       let thumbUrl = photo.thumbnailLink;
       if (thumbUrl) {
-         // Optionally, increase the thumbnail size slightly from default 220px to 800px for better quality on mobile
-         thumbUrl = thumbUrl.replace(/=s\d+$/, '=s800');
+        // Optionally, increase the thumbnail size slightly from default 220px to 800px for better quality on mobile
+        thumbUrl = thumbUrl.replace(/=s\d+$/, '=s800');
       } else {
-         thumbUrl = `/api/drive/image?id=${photo.id}`;
+        thumbUrl = `/api/drive/image?id=${photo.id}`;
       }
 
       return {
