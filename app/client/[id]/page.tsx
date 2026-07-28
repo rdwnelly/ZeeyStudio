@@ -619,7 +619,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [paymentStatus, orderId, isMockPayment]);
+  }, [showInvoice, paymentStatus, orderId, isMockPayment]);
 
   // Real-time Firestore listener for instant webhook confirmation
   const [isUploadingProof, setIsUploadingProof] = useState(false);
@@ -640,7 +640,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     });
     
     return () => unsubscribe();
-  }, [project]);
+  }, [project, showInvoice, paymentStatus]);
 
   const handlePaymentSuccess = () => {
     updateProjectStatusToSelesai();
