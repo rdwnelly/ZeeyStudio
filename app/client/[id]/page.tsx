@@ -7,6 +7,12 @@ import { saveAs } from "file-saver";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from "firebase/firestore";
 
+declare global {
+  interface Window {
+    snap?: any;
+  }
+}
+
 type Project = {
   id: string;
   clientName: string;
@@ -137,6 +143,57 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const [isPaymentLoading, setIsPaymentLoading] = useState(false);
   const [isMockPayment, setIsMockPayment] = useState(false);
   const [studioWaUrl, setStudioWaUrl] = useState<string | null>(null);
+  
+  // Midtrans states
+  const [snapToken, setSnapToken] = useState<string | null>(null);
+  const [snapConfig, setSnapConfig] = useState<{ clientKey?: string; isProduction?: boolean } | null>(null);
+  const [isSnapLoaded, setIsSnapLoaded] = useState(false);
+
+  const ensureSnapScriptLoaded = useCallback((clientKey?: string, isProduction?: boolean): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const key = clientKey || process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
+      const prod = typeof isProduction === 'boolean'
+        ? isProduction
+        : process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true';
+
+      if (!key) {
+        resolve(false);
+        return;
+      }
+
+      const targetUrl = prod
+        ? 'https://app.midtrans.com/snap/snap.js'
+        : 'https://app.sandbox.midtrans.com/snap/snap.js';
+
+      const existingScript = document.querySelector('script[src*="snap.js"]') as HTMLScriptElement | null;
+      if (existingScript) {
+        if (existingScript.src === targetUrl && window.snap) {
+          setIsSnapLoaded(true);
+          resolve(true);
+          return;
+        }
+        // Remove outdated or mismatched script tag
+        existingScript.remove();
+        if (window.snap) {
+          delete window.snap;
+        }
+      }
+
+      const script = document.createElement('script');
+      script.src = targetUrl;
+      script.setAttribute('data-client-key', key);
+      script.onload = () => {
+        setIsSnapLoaded(true);
+        resolve(true);
+      };
+      script.onerror = () => {
+        console.error("Gagal memuat script Midtrans Snap");
+        resolve(false);
+      };
+
+      document.body.appendChild(script);
+    });
+  }, []);
 
   // ZIP Download state
   const [isZipping, setIsZipping] = useState(false);
@@ -316,6 +373,37 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     };
   }, [resolvedParams.id]);
 
+  // Load Midtrans Snap Script
+  useEffect(() => {
+    const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true';
+    const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
+    
+    // Only load if client key is configured
+    if (!clientKey) return;
+
+    const scriptUrl = isProduction
+      ? 'https://app.midtrans.com/snap/snap.js'
+      : 'https://app.sandbox.midtrans.com/snap/snap.js';
+
+    // Prevent duplicate script tags
+    if (document.querySelector(`script[src="${scriptUrl}"]`)) {
+      setIsSnapLoaded(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.setAttribute('data-client-key', clientKey);
+    script.onload = () => setIsSnapLoaded(true);
+    script.onerror = () => console.error("Gagal memuat script Midtrans Snap");
+    
+    document.body.appendChild(script);
+
+    return () => {
+       // Optional: remove script on cleanup, though usually keeping it is fine for SPA
+    };
+  }, []);
+
   useEffect(() => {
     // Detect keyboard shortcuts for screenshots
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -333,25 +421,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       }
     };
 
-    // Detect when window loses focus (e.g. opening Snipping Tool)
-    // We add a blur effect to the body
-    const handleBlur = () => {
-      document.body.style.filter = "blur(15px)";
-    };
-
-    const handleFocus = () => {
-      document.body.style.filter = "none";
-    };
-
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("blur", handleBlur);
-    window.addEventListener("focus", handleFocus);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("blur", handleBlur);
-      window.removeEventListener("focus", handleFocus);
-      document.body.style.filter = "none";
     };
   }, []);
 
@@ -390,6 +463,11 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     if (grandTotal === 0) {
       updateProjectStatusToSelesai();
       setShowSuccess(true);
+      return;
+    }
+
+    if (snapToken) {
+      triggerSnapPayment(snapToken);
     } else {
       setShowInvoice(true);
       await generateQris();
@@ -404,7 +482,6 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     setPaymentStatus('pending');
     
     // Simpan pilihan foto ke Firestore lebih awal agar tidak hilang
-    // jika webhook merubah status ke 'Selesai' sebelum klien mengeklik apapun.
     try {
       await updateDoc(doc(db, 'projects', project.id), {
         selectedPhotoIds: Array.from(selectedPhotos),
@@ -427,17 +504,73 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         })
       });
       const data = await res.json();
-      if (data.success && data.qrString) {
-        setQrisString(data.qrString);
-        setIsMockPayment(data.isMock);
+      
+      if (data.success) {
+        if (data.mode === 'midtrans-snap' && data.snapToken) {
+           setSnapToken(data.snapToken);
+           setSnapConfig({ clientKey: data.clientKey, isProduction: data.isProduction });
+           const loaded = await ensureSnapScriptLoaded(data.clientKey, data.isProduction);
+           if (loaded) {
+              setShowInvoice(false);
+              triggerSnapPayment(data.snapToken);
+           } else {
+              alert("Gagal memuat modul pembayaran Midtrans.");
+           }
+        } else if (data.qrString) {
+           setQrisString(data.qrString);
+           setIsMockPayment(data.isMock);
+        }
       } else {
-        alert("Gagal memuat QRIS: " + (data.error || "Terjadi kesalahan"));
+        alert("Gagal memuat pembayaran: " + (data.error || "Terjadi kesalahan"));
       }
     } catch (err) {
       alert("Gagal menghubungi server pembayaran");
     } finally {
       setIsPaymentLoading(false);
     }
+  };
+
+  const triggerSnapPayment = async (token: string) => {
+    const loaded = await ensureSnapScriptLoaded(snapConfig?.clientKey, snapConfig?.isProduction);
+    if (!loaded || !window.snap) {
+       alert("Sistem pembayaran belum siap. Silakan refresh halaman.");
+       return;
+    }
+    setShowInvoice(false);
+    window.snap.pay(token, {
+      onSuccess: function (result: any) {
+        console.log('Payment success:', result);
+        setPaymentStatus('settlement');
+        handlePaymentSuccess();
+      },
+      onPending: function (result: any) {
+        console.log('Payment pending:', result);
+        if (result && (result.transaction_status === 'settlement' || result.transaction_status === 'capture' || result.status_code === '200')) {
+          setPaymentStatus('settlement');
+          handlePaymentSuccess();
+        }
+      },
+      onError: function (result: any) {
+        console.error('Payment error:', result);
+        alert("Pembayaran gagal atau dibatalkan.");
+        setPaymentStatus(null);
+      },
+      onClose: async function () {
+        console.log('Payment popup closed');
+        if (orderId) {
+          try {
+            const res = await fetch(`/api/payment/status?orderId=${orderId}&isMock=${isMockPayment}`);
+            const data = await res.json();
+            if (data.success && (data.transaction_status === 'settlement' || data.transaction_status === 'capture' || data.transaction_status === 'PAID')) {
+              setPaymentStatus('settlement');
+              handlePaymentSuccess();
+            }
+          } catch (e) {
+            console.error('Error checking status on close:', e);
+          }
+        }
+      }
+    });
   };
 
   const handleWhatsAppConfirmAsync = () => {
@@ -454,8 +587,6 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       paymentProofStatus: 'pending'
     });
 
-    // Fire and forget update ke Firestore, tidak perlu di-await karena browser
-    // akan membuka tab baru dan script di tab ini akan terus berjalan di background.
     updateDoc(doc(db, 'projects', project.id), {
       paymentProofStatus: 'pending',
       extraRevenue: totalExtraCost,
@@ -466,12 +597,11 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     });
   };
 
-
-  // Poll Payment Status
+  // Poll Payment Status (runs continuously while payment is pending)
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     
-    if (showInvoice && paymentStatus === 'pending' && orderId) {
+    if (paymentStatus === 'pending' && orderId) {
       intervalId = setInterval(async () => {
         try {
           const res = await fetch(`/api/payment/status?orderId=${orderId}&isMock=${isMockPayment}`);
@@ -483,21 +613,20 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         } catch (error) {
           console.error("Error polling status:", error);
         }
-      }, 3000); // Poll every 3 seconds
+      }, 2500);
     }
     
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [showInvoice, paymentStatus, orderId, isMockPayment]);
+  }, [paymentStatus, orderId, isMockPayment]);
 
   // Real-time Firestore listener for instant webhook confirmation
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
 
-  // Initialize
   useEffect(() => {
-    if (!project || !showInvoice || paymentStatus !== 'pending') return;
+    if (!project) return;
     
     const unsubscribe = onSnapshot(doc(db, "projects", project.id), (snap) => {
       if (snap.exists()) {
@@ -511,7 +640,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     });
     
     return () => unsubscribe();
-  }, [project, showInvoice, paymentStatus]);
+  }, [project]);
 
   const handlePaymentSuccess = () => {
     updateProjectStatusToSelesai();
@@ -825,15 +954,15 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <h1 className="text-4xl mb-4">Terima Kasih, {project.clientName}!</h1>
         <p className="text-foreground/70 font-sans max-w-md mx-auto mb-8">
           Pembayaran berhasil dan {confirmedPhotoCount} foto Anda telah dikonfirmasi.
-          Pilih cara unduh yang paling nyaman untuk HP Anda.
+          Klik tombol di bawah untuk menyimpan foto Anda ke Google Drive.
         </p>
 
         <div className="flex flex-col gap-3 mb-6 w-full max-w-sm">
 
           {/* Pesan Sabar Saat Proses */}
-          {(dlQueue || isZipping || isExporting) && (
-            <div className="bg-orange-50/80 border border-orange-200 text-orange-800 text-xs px-4 py-3 rounded-xl mb-2 text-center animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm backdrop-blur-sm">
-              <p>Harap bersabar pada saat proses pendownloadan foto, memakan waktu sedikit lama sesuai kecepatan internet Anda dan banyaknya foto yang dipilih.</p>
+          {isExporting && (
+            <div className="bg-blue-50/80 border border-blue-200 text-blue-800 text-xs px-4 py-3 rounded-xl mb-2 text-center animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm backdrop-blur-sm">
+              <p>Harap bersabar saat proses menyiapkan folder Google Drive Anda...</p>
               <p className="font-semibold italic mt-1">"Orang sabar disayang Tuhan" 😇</p>
             </div>
           )}
@@ -861,10 +990,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             </div>
           ) : (
             <>
-              {/* OPSI 1: Download ke Folder Drive (BARU) — Paling Nyaman di HP */}
+              {/* Simpan ke Google Drive */}
               <button
                 onClick={exportToDrive}
-                disabled={isExporting || !!dlQueue || isZipping}
+                disabled={isExporting}
                 className="bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-lg font-sans flex items-center justify-center gap-2 text-base disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation relative overflow-hidden group"
               >
                 {isExporting ? (
@@ -877,84 +1006,21 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   </>
                 ) : (
                   <>
-                    {/* Google Drive Logo (Simple SVG) */}
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
                     </svg>
-                    Simpan ke Google Drive ⭐
+                    Unduh Foto Pilihan Saya via Google Drive ⭐
                   </>
                 )}
-                {/* Shine effect */}
                 <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
               </button>
               {!isExporting && (
                 <p className="text-[11px] text-foreground/50 font-sans text-center -mt-1 px-4 leading-tight">
-                  Disarankan untuk HP. Kami akan membuatkan folder Drive khusus berisi foto Anda.
+                  Kami akan membuatkan folder Drive khusus berisi foto pilihan Anda secara langsung.
                 </p>
               )}
-
-              {/* OPSI 2: Download satu per satu */}
-              <button
-                onClick={downloadPhotosSequentially}
-                disabled={!!dlQueue || isExporting || isZipping}
-                className="bg-surface border border-border text-foreground px-8 py-3.5 rounded-xl font-medium hover:bg-surface-alt transition-colors font-sans flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation mt-2"
-              >
-                {dlQueue ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                    </svg>
-                    Mengunduh {dlQueue.current}/{dlQueue.total} foto...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Unduh Langsung ke HP (Satu per Satu)
-                  </>
-                )}
-              </button>
-              {dlQueue && (
-                <p className="text-xs text-foreground/50 font-sans text-center animate-pulse -mt-1">
-                  Foto masuk ke history download 📥 jangan tutup halaman ini
-                </p>
-              )}
-
-              {/* OPSI 3: Download semua sekaligus (ZIP) */}
-              <button
-                onClick={downloadSelectedZip}
-                disabled={isZipping || !!dlQueue || isExporting}
-                className="bg-surface border border-border text-foreground px-8 py-3.5 rounded-xl font-medium hover:bg-surface-alt transition-colors font-sans flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-              >
-                {isZipping ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                    </svg>
-                    {zipStatus === 'preparing' ? 'Menyiapkan...' : 'Membuat ZIP...'}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                    </svg>
-                    Unduh ZIP (.zip)
-                  </>
-                )}
-              </button>
             </>
           )}
-
-          {/* OPSI 4: Daftar nama file */}
-          <button
-            onClick={downloadTextList}
-            className="text-foreground/40 hover:text-foreground/70 text-xs font-sans underline underline-offset-2 text-center py-2 touch-manipulation mt-2 transition-colors"
-          >
-            Hanya unduh daftar nama file (.txt)
-          </button>
         </div>
       </div>
     );
@@ -1172,7 +1238,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
       {/* Invoice Modal Overlay */}
       {showInvoice && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8">
               <h2 className="text-3xl mb-2 font-serif">Foto Tambahan</h2>
@@ -1264,7 +1330,23 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 ) : isPaymentLoading ? (
                   <div className="flex flex-col items-center py-12 px-6">
                     <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4"></div>
-                    <p className="text-sm font-sans text-foreground/60">Menyiapkan kode QRIS...</p>
+                    <p className="text-sm font-sans text-foreground/60">Menyiapkan pembayaran...</p>
+                  </div>
+                ) : snapToken ? (
+                  <div className="flex flex-col items-center py-12 px-6 text-center w-full">
+                     <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    </div>
+                    <h3 className="font-serif text-xl mb-2 text-foreground">Selesaikan Pembayaran</h3>
+                    <p className="text-sm font-sans text-foreground/60 mb-6">
+                      Silakan lanjutkan pembayaran melalui popup Midtrans.
+                    </p>
+                    <button 
+                      onClick={() => triggerSnapPayment(snapToken)}
+                      className="w-full px-6 py-3 bg-accent hover:bg-accent-dark text-white font-medium font-sans rounded-xl text-center transition-all shadow-md cursor-pointer"
+                    >
+                      Buka Pembayaran
+                    </button>
                   </div>
                 ) : qrisString ? (
                   <>
@@ -1280,7 +1362,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       {isMockPayment ? (
                         <div className="flex items-center justify-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                          <p className="text-xs font-sans text-amber-600 font-medium">Mode Simulasi (Casaku belum dikonfigurasi)</p>
+                          <p className="text-xs font-sans text-amber-600 font-medium">Mode Simulasi</p>
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2 w-full">

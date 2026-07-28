@@ -63,13 +63,11 @@ export default function SettingsPage() {
 
   // --- PEMBAYARAN STATE ---
   const [payment, setPayment] = useState({
-    // Casaku.id (primary payment integration)
-    casaku_license_key: "",
-    casaku_webhook_secret: "",
-    casaku_qr_id: "",
-    // Legacy Cashify (fallback)
-    cashifyApiKey: "",
-    cashifyWebhookSecret: "",
+    // Midtrans Snap
+    midtrans_server_key: "",
+    midtrans_client_key: "",
+    midtrans_merchant_id: "",
+    midtrans_is_production: false,
     qrisString: "",
     // Transfer Manual
     bankName: "",
@@ -761,98 +759,112 @@ export default function SettingsPage() {
         {activeTab === 'pembayaran' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
 
-            {/* ── Casaku.id Integration Card ─────────────────────────────────── */}
+            {/* ── Midtrans Snap Integration Card ─────────────────────────────── */}
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-emerald-500/10 p-3 rounded-xl text-emerald-600">
+                <div className="bg-blue-500/10 p-3 rounded-xl text-blue-600">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6M9 11h3" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
                   </svg>
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-serif">Integrasi Casaku.id</h2>
-                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 text-xs font-bold px-2.5 py-1 rounded-full">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                      Direkomendasikan
+                    <h2 className="text-2xl font-serif">Integrasi Midtrans Snap</h2>
+                    <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                      Utama
                     </span>
                   </div>
                   <p className="text-foreground/60 font-sans text-sm">
-                    Casaku membaca notifikasi saldo masuk di HP Android Anda, lalu memverifikasi pesanan secara otomatis — tanpa payment gateway, tanpa potongan pajak.
+                    Midtrans Snap memungkinkan klien membayar dengan berbagai metode (QRIS, GoPay, Transfer Bank, Kartu Kredit) dengan otomatis konfirmasi pembayaran.
                   </p>
                 </div>
               </div>
 
-              {/* Cara Setup */}
-              <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl p-5 mb-6 font-sans">
-                <p className="text-sm font-bold text-emerald-800 dark:text-emerald-400 mb-3 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <form onSubmit={savePayment} className="space-y-5 max-w-xl font-sans mb-8">
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Server Key</label>
+                  <input
+                    type="password"
+                    value={(payment as any).midtrans_server_key || ""}
+                    onChange={(e) => setPayment({ ...payment, midtrans_server_key: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                    placeholder="Mid-server-..."
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Client Key</label>
+                  <input
+                    type="password"
+                    value={(payment as any).midtrans_client_key || ""}
+                    onChange={(e) => setPayment({ ...payment, midtrans_client_key: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                    placeholder="Mid-client-..."
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Merchant ID</label>
+                  <input
+                    type="text"
+                    value={(payment as any).midtrans_merchant_id || ""}
+                    onChange={(e) => setPayment({ ...payment, midtrans_merchant_id: e.target.value } as any)}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                    placeholder="Mxxxxxxxxx"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 mt-4">
+                   <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={(payment as any).midtrans_is_production || false}
+                      onChange={(e) => setPayment({ ...payment, midtrans_is_production: e.target.checked } as any)}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                  </label>
+                  <span className="text-sm font-medium text-foreground/80">Gunakan Environment Production</span>
+                </div>
+                
+                 <div className="pt-4 flex items-center gap-4">
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-8 py-3.5 rounded-xl font-medium hover:bg-blue-700 transition-all shadow-md cursor-pointer w-full md:w-auto"
+                  >
+                    Simpan Midtrans
+                  </button>
+                  {isPaymentSaved && (
+                    <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                      Tersimpan!
+                    </span>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            {/* ── Metode Transfer Manual Card ─────────────────────────────── */}
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+                <div className="bg-accent/10 p-3 rounded-xl text-accent">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
                   </svg>
-                  Cara Setup Casaku (4 Langkah)
-                </p>
-                <ol className="space-y-2 text-sm text-emerald-700 dark:text-emerald-300">
-                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">1.</span> Daftar di <a href="https://casaku.id" target="_blank" rel="noopener" className="underline font-medium">casaku.id</a> dan upload gambar QRIS statis Anda</li>
-                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">2.</span> Buat API Keys di dashboard Casaku → salin <strong>License Key</strong> dan <strong>QR ID (UUID)</strong></li>
-                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">3.</span> Install app Casaku di HP Android yang menerima notifikasi e-wallet/m-banking</li>
-                  <li className="flex items-start gap-2"><span className="font-bold shrink-0">4.</span> Daftarkan URL Webhook di bawah ke dashboard Casaku</li>
-                </ol>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-serif">Metode Transfer Manual (Alternatif)</h2>
+                  <p className="text-foreground/60 font-sans text-sm">
+                    Klien dapat mentransfer pembayaran secara manual jika memilih opsi konfirmasi via WhatsApp.
+                  </p>
+                </div>
               </div>
 
               <form onSubmit={savePayment} className="space-y-5 max-w-xl font-sans">
-
-                {/* License Key */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">License Key</label>
-                  <input
-                    id="casaku-license-key"
-                    type="password"
-                    value={(payment as any).casaku_license_key || ""}
-                    onChange={(e) => setPayment({ ...payment, casaku_license_key: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
-                    placeholder="Dari dashboard Casaku → API Keys"
-                    autoComplete="off"
-                  />
-                </div>
-
-                {/* Webhook Secret */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Webhook Secret</label>
-                  <input
-                    id="casaku-webhook-secret"
-                    type="password"
-                    value={(payment as any).casaku_webhook_secret || ""}
-                    onChange={(e) => setPayment({ ...payment, casaku_webhook_secret: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
-                    placeholder="Dari dashboard Casaku → Webhook Settings"
-                    autoComplete="off"
-                  />
-                  <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                    <p className="text-xs text-foreground/50">URL Webhook untuk dimasukkan di dashboard Casaku:</p>
-                    <code className="text-xs bg-surface-alt px-2 py-1 rounded-lg border border-border font-mono select-all">
-                      {typeof window !== "undefined" ? window.location.origin : "https://domainanda.com"}/api/webhook/casaku
-                    </code>
-                  </div>
-                </div>
-
-                {/* QR ID */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">QRIS Merchant ID (UUID)</label>
-                  <input
-                    id="casaku-qr-id"
-                    type="text"
-                    value={(payment as any).casaku_qr_id || ""}
-                    onChange={(e) => setPayment({ ...payment, casaku_qr_id: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all font-mono text-sm"
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  />
-                  <p className="text-xs text-foreground/50 mt-1.5">UUID QRIS Merchant yang muncul di dashboard Casaku setelah upload QRIS.</p>
-                </div>
-
-                {/* Metode Transfer Manual */}
-                <h3 className="text-lg font-serif pt-6 border-t border-border text-foreground">Metode Transfer Manual (Alternatif)</h3>
-
                 <div>
                   <label className="block text-sm font-medium mb-2 text-foreground/80">Nama Bank / E-Wallet</label>
                   <input
@@ -892,7 +904,7 @@ export default function SettingsPage() {
                     id="save-payment-settings-btn"
                     className="bg-accent text-white px-8 py-3.5 rounded-xl font-medium hover:bg-accent-dark transition-all shadow-md cursor-pointer w-full md:w-auto"
                   >
-                    Simpan Pengaturan
+                    Simpan Transfer Manual
                   </button>
                   {isPaymentSaved && (
                     <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">

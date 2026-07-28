@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { createSnapClient } from '@/lib/midtrans';
 
 /**
- * Cek status pembayaran transaksi QRIS via Casaku.id
+ * Cek status pembayaran transaksi Midtrans
  *
- * Pertama coba polling ke Casaku API check-status.
- * Jika Casaku tidak dikonfigurasi, fallback ke Firestore (status project).
- *
- * Docs: https://casaku.id/docs#check-status
+ * Docs Midtrans: https://docs.midtrans.com/reference/get-transaction-status
  */
 export async function GET(req: Request) {
   try {
@@ -27,17 +25,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: 'Format orderId tidak valid' }, { status: 400 });
     }
 
-    // ── 2. Baca konfigurasi Casaku dari Firestore settings atau env ─────────────
-    let licenseKey = process.env.CASAKU_LICENSE_KEY || '';
-    let casakuTransactionId: string | null = null;
-
-    const settingsSnap = await getDoc(doc(db, 'settings', 'payment'));
-    if (settingsSnap.exists()) {
-      const s = settingsSnap.data();
-      if (s.casaku_license_key) licenseKey = s.casaku_license_key;
-    }
-
-    // ── 3. Ambil casakuTransactionId dari pendingPayment Firestore ──────────────
+    // ── 2. Ambil data project dari Firestore ─────────────────────────────────────
     const projectRef = doc(db, 'projects', projectId);
     const projectSnap = await getDoc(projectRef);
 
@@ -52,40 +40,30 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, transaction_status: 'PAID' });
     }
 
-    casakuTransactionId = projectData.pendingPayment?.casakuTransactionId || null;
+    // ── 3. Polling status ke Midtrans API ────────────────────────────────────────
+    try {
+      const snap = await createSnapClient();
+      if (snap) {
+        const midtransRes = await snap.transaction.status(orderId);
+        console.log('[payment-status] Midtrans check-status:', midtransRes.transaction_status);
 
-    // ── 4. Polling status ke Casaku API jika ada transactionId & licenseKey ──────
-    if (licenseKey && casakuTransactionId) {
-      try {
-        const casakuRes = await fetch('https://api.casaku.id/api/generate/check-status', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-license-key': licenseKey,
-          },
-          body: JSON.stringify({ transactionId: casakuTransactionId }),
-        });
-
-        if (casakuRes.ok) {
-          const casakuData = await casakuRes.json();
-          console.log('[payment-status] Casaku check-status:', casakuData);
-
-          const casakuStatus = casakuData.status || casakuData.transaction_status || 'pending';
-
-          // Casaku returns: pending | paid | cancel | expired
-          if (casakuStatus === 'paid' || casakuStatus === 'PAID') {
-            return NextResponse.json({ success: true, transaction_status: 'PAID' });
-          } else if (casakuStatus === 'expired' || casakuStatus === 'cancel') {
-            return NextResponse.json({ success: true, transaction_status: casakuStatus });
-          }
+        const status = midtransRes.transaction_status;
+        if (status === 'settlement' || status === 'capture') {
+          return NextResponse.json({ success: true, transaction_status: 'PAID' });
+        } else if (status === 'expire' || status === 'cancel' || status === 'deny') {
+          return NextResponse.json({ success: true, transaction_status: status });
+        } else {
+          return NextResponse.json({ success: true, transaction_status: 'pending' });
         }
-      } catch (casakuError) {
-        // Jangan crash — fallback ke Firestore di bawah
-        console.warn('[payment-status] Gagal polling Casaku, fallback ke Firestore:', casakuError);
+      }
+    } catch (midtransError: any) {
+      // Status 404 dari Midtrans berarti transaksi belum dibayar (atau belum tercatat penuh)
+      if (!midtransError.message?.includes('404')) {
+        console.warn('[payment-status] Gagal polling Midtrans:', midtransError.message);
       }
     }
 
-    // ── 5. Fallback: cek status Firestore ──────────────────────────────────────
+    // ── 4. Fallback: cek status Firestore ────────────────────────────────────────
     return NextResponse.json({
       success: true,
       transaction_status: projectData.status === 'Selesai' ? 'PAID' : 'pending',
@@ -95,3 +73,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
