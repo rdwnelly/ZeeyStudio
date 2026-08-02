@@ -509,6 +509,25 @@ export default function BookingsPage() {
           {/* Daftar Pesanan Aktif */}
           {activeTab === 'aktif' && (
           <div className="animate-in fade-in duration-300">
+            {/* Top Alert Bar jika ada pembayaran pending verifikasi */}
+            {projects.some(p => p.paymentProofStatus === 'pending') && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 md:p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-500 text-white rounded-full flex items-center justify-center shrink-0 font-bold shadow-sm">
+                    ⚡
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-foreground text-sm">
+                      {projects.filter(p => p.paymentProofStatus === 'pending').length} Pesanan Menunggu Verifikasi Pembayaran
+                    </h4>
+                    <p className="text-xs text-foreground/70">
+                      Klien telah mengirimkan konfirmasi transfer. Klik tombol hijau <strong>"Setujui Pembayaran (1-Klik)"</strong> di bawah untuk membuka akses galeri secara otomatis.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               {projects.filter(p => p.status !== 'File Terkirim').length === 0 ? (
                 <div className="text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border">
@@ -526,13 +545,26 @@ export default function BookingsPage() {
                             {project.status}
                           </span>
                           {project.paymentProofStatus === 'pending' && (
-                            <span 
-                              className="text-xs px-3 py-1.5 rounded-full border font-medium whitespace-nowrap bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1 cursor-pointer hover:bg-blue-200 shadow-sm transition-all animate-pulse"
-                              onClick={() => setVerifyingProject(project)}
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                              Verifikasi Bukti Bayar
-                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs px-3 py-1 rounded-full font-semibold bg-amber-500/10 text-amber-700 border border-amber-500/20 flex items-center gap-1.5 animate-pulse">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                                Menunggu Verifikasi
+                              </span>
+                              <button
+                                onClick={() => handleApprovePayment(project)}
+                                disabled={isVerifying}
+                                className="text-xs px-3 py-1 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                                title="Setujui pembayaran dan buka akses galeri foto untuk klien"
+                              >
+                                ✓ Setujui (1-Klik)
+                              </button>
+                              <button
+                                onClick={() => setVerifyingProject(project)}
+                                className="text-xs px-2.5 py-1 rounded-xl font-medium bg-surface-alt hover:bg-border text-foreground/70 transition-all cursor-pointer"
+                              >
+                                Detail
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>

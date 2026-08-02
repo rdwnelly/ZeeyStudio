@@ -79,9 +79,10 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: `Gagal membuat transaksi Midtrans: ${midtransError.message}`,
+          isMidtransError: true,
+          error: `Midtrans sedang dalam proses peninjauan/review bisnis: ${midtransError.message}`,
         },
-        { status: 500 }
+        { status: 200 }
       );
     }
   } catch (error: any) {
