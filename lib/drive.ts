@@ -94,16 +94,28 @@ export async function getFolderIdByName(folderName: string): Promise<string | nu
 export async function getPhotosInFolder(folderId: string) {
   const drive = await getDriveService();
   try {
-    const res = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: 'files(id, name, thumbnailLink, webContentLink)',
-      spaces: 'drive',
-      pageSize: 100,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
+    let allFiles: any[] = [];
+    let pageToken: string | undefined = undefined;
 
-    return res.data.files || [];
+    do {
+      const res: any = await drive.files.list({
+        q: `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`,
+        fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)',
+        spaces: 'drive',
+        pageSize: 1000,
+        pageToken: pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+
+      if (res.data.files && res.data.files.length > 0) {
+        allFiles.push(...res.data.files);
+      }
+
+      pageToken = res.data.nextPageToken || undefined;
+    } while (pageToken);
+
+    return allFiles;
   } catch (err) {
     console.error(`Error fetching photos in folder ${folderId}:`, err);
     throw err;

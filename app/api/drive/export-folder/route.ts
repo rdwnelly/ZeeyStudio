@@ -32,22 +32,30 @@ export async function POST(request: Request) {
     // 2. Make the folder public so the client can access it
     await makeFolderPublic(newFolderId);
 
-    // 3. Copy files (as shortcuts) to the new folder sequentially to avoid rate limits
-    const results = [];
-    for (let i = 0; i < photoIds.length; i++) {
-      const fileId = photoIds[i];
-      try {
-        const newFileName = `foto_${i + 1}.jpg`;
-        await createShortcut(fileId, newFolderId, newFileName);
-        results.push({ id: fileId, status: 'success' });
-      } catch (err) {
-        console.error(`Failed to create shortcut for file ${fileId}:`, err);
-        results.push({ id: fileId, status: 'error' });
+    // 3. Copy files (as shortcuts) to the new folder in batches to avoid timing out when handling >100 photos
+    const results: Array<{ id: string; status: 'success' | 'error' }> = [];
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < photoIds.length; i += BATCH_SIZE) {
+      const batch = photoIds.slice(i, i + BATCH_SIZE);
+      const batchPromises = batch.map(async (fileId: string, batchIndex: number) => {
+        const globalIndex = i + batchIndex;
+        try {
+          const newFileName = `foto_${globalIndex + 1}.jpg`;
+          await createShortcut(fileId, newFolderId, newFileName);
+          return { id: fileId, status: 'success' as const };
+        } catch (err) {
+          console.error(`Failed to create shortcut for file ${fileId}:`, err);
+          return { id: fileId, status: 'error' as const };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+
+      if (i + BATCH_SIZE < photoIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
-      
-      // Add a small delay between copies to avoid Google Drive API rate limits (1000 requests per 100 seconds)
-      // We'll sleep for 200ms
-      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     const folderUrl = `https://drive.google.com/drive/folders/${newFolderId}`;
