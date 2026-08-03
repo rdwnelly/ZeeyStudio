@@ -165,8 +165,7 @@ export async function makeFolderPublic(folderId: string) {
       },
       supportsAllDrives: true,
     });
-  } catch (err) {
-    console.error(`Error making folder ${folderId} public:`, err);
-    throw err;
+  } catch (err: any) {
+    console.warn(`Notice making item ${folderId} public:`, err?.message || err);
   }
 }

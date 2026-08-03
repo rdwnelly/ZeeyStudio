@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDriveService } from '@/lib/drive';
+import { getDriveService, makeFolderPublic } from '@/lib/drive';
 import { Readable } from 'stream';
 
 export async function POST(request: Request) {
@@ -41,6 +41,10 @@ export async function POST(request: Request) {
       media: media,
       fields: 'id, webViewLink, webContentLink',
     });
+
+    if (response.data.id) {
+      await makeFolderPublic(response.data.id);
+    }
 
     return NextResponse.json({
       success: true,

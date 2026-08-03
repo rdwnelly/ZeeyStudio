@@ -29,10 +29,13 @@ export async function POST(request: Request) {
 
     console.log(`Created new folder ${folderName} with ID ${newFolderId}`);
 
-    // 2. Make the folder public so the client can access it
+    // 2. Make the new folder and source folder public so the client can access them
     await makeFolderPublic(newFolderId);
+    if (sourceFolderId) {
+      await makeFolderPublic(sourceFolderId);
+    }
 
-    // 3. Copy files (as shortcuts) to the new folder in batches to avoid timing out when handling >100 photos
+    // 3. Copy files (as shortcuts) to the new folder in batches and grant public permissions to target photo files
     const results: Array<{ id: string; status: 'success' | 'error' }> = [];
     const BATCH_SIZE = 5;
 
@@ -42,10 +45,15 @@ export async function POST(request: Request) {
         const globalIndex = i + batchIndex;
         try {
           const newFileName = `foto_${globalIndex + 1}.jpg`;
-          await createShortcut(fileId, newFolderId, newFileName);
+          const shortcut = await createShortcut(fileId, newFolderId, newFileName);
+          // Make target photo file public so shortcut target can be opened by client without permission prompt
+          await makeFolderPublic(fileId);
+          if (shortcut && shortcut.id) {
+            await makeFolderPublic(shortcut.id);
+          }
           return { id: fileId, status: 'success' as const };
         } catch (err) {
-          console.error(`Failed to create shortcut for file ${fileId}:`, err);
+          console.error(`Failed to create shortcut/permissions for file ${fileId}:`, err);
           return { id: fileId, status: 'error' as const };
         }
       });

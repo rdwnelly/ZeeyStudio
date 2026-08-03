@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createFolder, getFolderIdByName } from '@/lib/drive';
+import { createFolder, getFolderIdByName, makeFolderPublic } from '@/lib/drive';
 
 export async function POST(request: Request) {
   try {
@@ -31,6 +31,9 @@ export async function POST(request: Request) {
 
     // Create the new folder inside the main folder
     const folderId = await createFolder(folderName, parentFolderId);
+    if (folderId) {
+      await makeFolderPublic(folderId);
+    }
 
     return NextResponse.json({
       success: true,
