@@ -3,16 +3,20 @@
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
+import { db } from "@/lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
+import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
 
 type Project = {
   id: string;
   clientName: string;
   waNumber: string;
-  gdriveLinkHighRes: string;
+  gdriveLinkHighRes?: string;
   maxPhotos: number;
+  subTokens?: SubToken[];
   createdAt: string;
   gdriveFolderId?: string;
-  status?: 'Menunggu Pemilihan' | 'Selesai';
+  status?: string;
 };
 
 export default function ActiveProjectsPage() {
@@ -21,14 +25,33 @@ export default function ActiveProjectsPage() {
   const [sendingWAId, setSendingWAId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
+  const [multiTokenProject, setMultiTokenProject] = useState<Project | null>(null);
+  const [isMultiTokenOpen, setIsMultiTokenOpen] = useState(false);
+
+  const fetchProjects = async () => {
+    try {
+      const snap = await getDocs(collection(db, "projects"));
+      const fsProjects = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+      const localProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]") as Project[];
+      
+      const map = new Map<string, Project>();
+      localProjects.forEach(p => map.set(p.id, p));
+      fsProjects.forEach(p => map.set(p.id, p));
+      
+      const allProjects = Array.from(map.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setActiveProjects(allProjects.filter((p: Project) => p.status !== 'Selesai' && p.status !== 'File Terkirim'));
+      setCompletedProjects(allProjects.filter((p: Project) => p.status === 'Selesai' || p.status === 'File Terkirim'));
+    } catch (e) {
+      console.error("Gagal memuat proyek dari Firestore:", e);
+      const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
+      const sortedProjects = savedProjects.sort((a: Project, b: Project) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setActiveProjects(sortedProjects.filter((p: Project) => p.status !== 'Selesai'));
+      setCompletedProjects(sortedProjects.filter((p: Project) => p.status === 'Selesai'));
+    }
+  };
+
   useEffect(() => {
-    const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
-    
-    // Sort all projects by date descending (newest first)
-    const sortedProjects = savedProjects.sort((a: Project, b: Project) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    setActiveProjects(sortedProjects.filter((p: Project) => p.status !== 'Selesai'));
-    setCompletedProjects(sortedProjects.filter((p: Project) => p.status === 'Selesai'));
+    fetchProjects();
   }, []);
 
   const handleSendWAReminder = async (project: Project) => {
@@ -103,6 +126,16 @@ export default function ActiveProjectsPage() {
                         
                         <div className="flex flex-wrap gap-2">
                           <button
+                            onClick={() => {
+                              setMultiTokenProject(project);
+                              setIsMultiTokenOpen(true);
+                            }}
+                            className="px-4 py-2 border border-accent/30 bg-accent/10 text-accent rounded-lg text-sm font-semibold hover:bg-accent/20 transition-colors text-center flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                            {project.subTokens && project.subTokens.length > 0 ? `Sub-Token (${project.subTokens.length})` : 'Bagi Token Link'}
+                          </button>
+                          <button
                             onClick={() => handleCopyLink(project.id)}
                             className="px-4 py-2 border border-border bg-white rounded-lg text-sm font-medium hover:bg-surface-alt transition-colors text-center flex items-center gap-2 cursor-pointer"
                           >
@@ -150,6 +183,8 @@ export default function ActiveProjectsPage() {
               </div>
             )}
           </div>
+        </div>
+
         {/* Completed Projects Dashboard */}
         <div className="bg-surface border border-border rounded-2xl shadow-md overflow-hidden mt-8">
           <div className="p-6 border-b border-border flex justify-between items-center bg-green-50/50">
@@ -221,8 +256,13 @@ export default function ActiveProjectsPage() {
             )}
           </div>
         </div>
-        </div>
       </div>
+      <MultiTokenModal
+        isOpen={isMultiTokenOpen}
+        onClose={() => setIsMultiTokenOpen(false)}
+        project={multiTokenProject}
+        onProjectUpdated={fetchProjects}
+      />
     </Sidebar>
   );
 }

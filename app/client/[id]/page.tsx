@@ -7,6 +7,8 @@ import { saveAs } from "file-saver";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from "firebase/firestore";
 
+import { SubToken } from "@/components/MultiTokenModal";
+
 declare global {
   interface Window {
     snap?: any;
@@ -20,6 +22,7 @@ type Project = {
   gdriveLinkWatermark: string;
   gdriveLinkHighRes: string;
   maxPhotos: number;
+  subTokens?: SubToken[];
   createdAt: string;
   gdriveFolderId?: string;
   status?: string;
@@ -144,6 +147,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const [isMockPayment, setIsMockPayment] = useState(false);
   const [studioWaUrl, setStudioWaUrl] = useState<string | null>(null);
   
+  // Multi-token link states
+  const [activeSubToken, setActiveSubToken] = useState<SubToken | null>(null);
+  const [showSubTokenSelector, setShowSubTokenSelector] = useState(false);
+
   // Transfer Manual & Midtrans Review states
   const [manualBankInfo, setManualBankInfo] = useState<{ bankName: string; accountNumber: string; accountName: string } | null>(null);
   const [copiedBank, setCopiedBank] = useState(false);
@@ -306,6 +313,27 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         }
         setProject(found);
 
+        // ── Process Sub-tokens ──
+        let matchedSub: SubToken | undefined;
+        if (typeof window !== "undefined") {
+          const urlToken = new URLSearchParams(window.location.search).get("token");
+          if (found.subTokens && found.subTokens.length > 0) {
+            if (urlToken) {
+              matchedSub = found.subTokens.find(st => st.id === urlToken);
+            }
+            if (matchedSub) {
+              setActiveSubToken(matchedSub);
+              if (matchedSub.selectedPhotoIds && matchedSub.selectedPhotoIds.length > 0) {
+                setSelectedPhotos(new Set(matchedSub.selectedPhotoIds));
+              }
+            } else {
+              setShowSubTokenSelector(true);
+            }
+          } else if (found.selectedPhotoIds && found.selectedPhotoIds.length > 0) {
+            setSelectedPhotos(new Set(found.selectedPhotoIds));
+          }
+        }
+
         // ── Process WA number (profile sudah di-fetch paralel) ──
         try {
           let wa = "";
@@ -335,10 +363,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           console.warn("Failed to prefetch WA number", e);
         }
 
-        // ── KUNCI GALERI: jika project sudah diselesaikan, langsung tampilkan halaman sukses ──
-        const isLocked = ['Selesai', 'File Terkirim'].includes(found.status || '') || !!found.completedAt;
+        // ── KUNCI GALERI: hanya kunci penuh jika status proyek sudah 'File Terkirim' ──
+        const isLocked = found.status === 'File Terkirim';
         if (isLocked) {
-          if (found.selectedPhotoIds && found.selectedPhotoIds.length > 0) {
+          if (matchedSub && matchedSub.selectedPhotoIds && matchedSub.selectedPhotoIds.length > 0) {
+            setSelectedPhotos(new Set(matchedSub.selectedPhotoIds));
+          } else if (found.selectedPhotoIds && found.selectedPhotoIds.length > 0) {
             setSelectedPhotos(new Set(found.selectedPhotoIds));
           }
           setShowSuccess(true);
@@ -455,10 +485,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     setSelectedPhotos(newSet);
   };
 
+  const activeMaxPhotos = activeSubToken ? activeSubToken.maxPhotos : (project ? project.maxPhotos : 0);
+
   const extraPhotoItem = priceList.find(item => item.id === "extra_photo");
   const activeExtraPhotoPrice = extraPhotoItem ? extraPhotoItem.price : 50000;
   
-  const extraPhotosCount = project ? Math.max(0, selectedPhotos.size - project.maxPhotos) : 0;
+  const extraPhotosCount = project ? Math.max(0, selectedPhotos.size - activeMaxPhotos) : 0;
   const extraPhotosCost = extraPhotosCount * activeExtraPhotoPrice;
 
   const addonsCost = Object.entries(selectedAddons).reduce((acc, [id, qty]) => {
@@ -653,7 +685,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     const unsubscribe = onSnapshot(doc(db, "projects", project.id), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.status === 'Selesai') {
+        if (data.status === 'File Terkirim') {
           setPaymentStatus('settlement');
           setShowInvoice(false);
           setShowSuccess(true);
@@ -688,14 +720,52 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     if (!project) return;
     const selectedIds = Array.from(selectedPhotos);
     try {
-      await updateDoc(doc(db, 'projects', project.id), {
-        status: 'Selesai',
-        extraRevenue: totalExtraCost,
-        selectedAddons: selectedAddons,
-        // Simpan ID foto terpilih agar bisa dipulihkan setelah refresh
-        selectedPhotoIds: selectedIds,
-        completedAt: new Date().toISOString(),
-      });
+      if (project.subTokens && project.subTokens.length > 0 && activeSubToken) {
+        const updatedSubTokens = project.subTokens.map(st => {
+          if (st.id === activeSubToken.id) {
+            return {
+              ...st,
+              selectedPhotoIds: selectedIds,
+              status: 'Selesai' as const,
+              completedAt: new Date().toISOString()
+            };
+          }
+          return st;
+        });
+
+        const combinedSelected = new Set<string>();
+        updatedSubTokens.forEach(st => {
+          (st.selectedPhotoIds || []).forEach(id => combinedSelected.add(id));
+        });
+
+        const isAllSubTokensDone = updatedSubTokens.every(
+          st => st.status === 'Selesai' || (st.selectedPhotoIds && st.selectedPhotoIds.length >= st.maxPhotos)
+        );
+
+        const updateData: any = {
+          subTokens: updatedSubTokens,
+          selectedPhotoIds: Array.from(combinedSelected),
+          extraRevenue: totalExtraCost,
+          selectedAddons: selectedAddons,
+        };
+
+        if (isAllSubTokensDone) {
+          updateData.status = 'Selesai';
+          updateData.completedAt = new Date().toISOString();
+        }
+
+        await updateDoc(doc(db, 'projects', project.id), updateData);
+        setProject({ ...project, ...updateData });
+        setActiveSubToken({ ...activeSubToken, selectedPhotoIds: selectedIds, status: 'Selesai' });
+      } else {
+        await updateDoc(doc(db, 'projects', project.id), {
+          status: 'Selesai',
+          extraRevenue: totalExtraCost,
+          selectedAddons: selectedAddons,
+          selectedPhotoIds: selectedIds,
+          completedAt: new Date().toISOString(),
+        });
+      }
     } catch (e) {
       console.error(e);
     }
@@ -1037,12 +1107,19 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
               </button>
               {!isExporting && (
-                <p className="text-[11px] text-foreground/50 font-sans text-center -mt-1 px-4 leading-tight">
+                <p className="text-[11px] text-foreground/50 font-sans text-center -mt-1 px-4 leading-tight mb-2">
                   Kami akan membuatkan folder Drive khusus berisi foto pilihan Anda secara langsung.
                 </p>
               )}
             </>
           )}
+
+          <button
+            onClick={() => setShowSuccess(false)}
+            className="w-full py-3.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-surface-alt transition-colors font-sans text-foreground/80 cursor-pointer flex items-center justify-center gap-2 mt-2"
+          >
+            ✏️ Ubah / Pilih Ulang Foto
+          </button>
         </div>
       </div>
     );
@@ -1063,10 +1140,24 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
       {/* Floating Header */}
       <header className="fixed top-0 left-0 right-0 z-40 bg-surface/80 backdrop-blur-md border-b border-white/10 shadow-sm transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4 flex justify-between items-center">
           <div>
             <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-wide">{project.clientName}</h1>
-            <p className="text-[10px] md:text-xs text-foreground/60 font-sans uppercase tracking-widest mt-1">Pemilihan Foto Eksklusif</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1 font-sans">
+              <span className="text-[11px] md:text-xs text-foreground/70 bg-surface-alt/70 px-2.5 py-0.5 rounded-full border border-border flex items-center gap-1">
+                <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                <strong className="text-foreground">{photos.length} Foto</strong> Terupload di GDrive
+              </span>
+              {activeSubToken ? (
+                <span className="text-[10px] md:text-xs bg-accent/10 text-accent font-semibold px-2.5 py-0.5 rounded-full border border-accent/20">
+                  {activeSubToken.name} ({activeSubToken.maxPhotos} foto)
+                </span>
+              ) : (
+                <span className="text-[10px] md:text-xs text-foreground/50 uppercase tracking-widest hidden sm:inline">
+                  Pemilihan Foto Eksklusif
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <button 
@@ -1096,22 +1187,29 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       {/* Floating Action Bar (Bottom Pill) */}
       <div className="fixed bottom-6 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-[600px] z-50">
         <div className="bg-surface/90 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.12)] rounded-full p-2 flex items-center justify-between transition-all duration-300">
-          <div className="flex items-center pl-4 gap-4">
+          <div className="flex items-center pl-4 gap-3 md:gap-4">
             <div className="flex flex-col">
               <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">Terpilih</span>
               <div className="flex items-baseline gap-1">
-                <span className={`text-xl font-serif leading-none ${selectedPhotos.size > project.maxPhotos ? "text-accent" : "text-foreground"}`}>
+                <span className={`text-xl font-serif leading-none ${selectedPhotos.size > activeMaxPhotos ? "text-accent" : "text-foreground"}`}>
                   {selectedPhotos.size}
                 </span>
-                <span className="text-sm text-foreground/40">/ {project.maxPhotos}</span>
+                <span className="text-sm text-foreground/40">/ {activeMaxPhotos}</span>
               </div>
             </div>
+
+            <div className="h-8 w-[1px] bg-border/50 mx-1 hidden sm:block"></div>
+            <div className="hidden sm:flex flex-col">
+              <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">Total GDrive</span>
+              <span className="text-sm font-semibold text-foreground/80 leading-none">{photos.length} Foto</span>
+            </div>
+
             {grandTotal > 0 && (
-              <div className="h-8 w-[1px] bg-border/50 mx-2"></div>
+              <div className="h-8 w-[1px] bg-border/50 mx-1"></div>
             )}
             {grandTotal > 0 && (
               <div className="flex flex-col animate-in fade-in slide-in-from-left-2">
-                <span className="text-[10px] text-accent/70 uppercase tracking-widest font-medium">Total Tagihan</span>
+                <span className="text-[10px] text-accent/70 uppercase tracking-widest font-medium">Tagihan</span>
                 <span className="text-sm font-bold text-accent leading-none">Rp {(grandTotal/1000).toLocaleString('id-ID')}k</span>
               </div>
             )}
@@ -1131,10 +1229,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       <div className="h-24 md:h-28"></div>
 
       {/* Warning Banner if Over Limit */}
-      {selectedPhotos.size > project.maxPhotos && (
+      {selectedPhotos.size > activeMaxPhotos && (
         <div className="max-w-7xl mx-auto px-4 mb-4">
           <div className="bg-accent/10 border border-accent/20 text-accent py-3 px-6 rounded-2xl text-center text-sm font-sans flex flex-col md:flex-row items-center justify-center gap-2 animate-in slide-in-from-top-4 fade-in duration-500 shadow-sm">
-            <span>Anda memilih <strong>{extraPhotosCount} foto ekstra</strong> dari batas paket.</span>
+            <span>Anda memilih <strong>{extraPhotosCount} foto ekstra</strong> dari batas paket link ({activeMaxPhotos} foto).</span>
             <span className="hidden md:inline">•</span>
             <span className="font-bold">Tambahan: Rp {totalExtraCost.toLocaleString('id-ID')}</span>
           </div>
@@ -1587,6 +1685,56 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* SubToken Selector Modal (if project has subTokens but no active token selected) */}
+      {showSubTokenSelector && project?.subTokens && project.subTokens.length > 0 && !activeSubToken && (
+        <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface border border-border rounded-3xl max-w-md w-full p-6 md:p-8 shadow-2xl space-y-6 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 bg-accent/10 text-accent rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+              👤
+            </div>
+            <div>
+              <h3 className="text-xl md:text-2xl font-serif text-foreground">Pilih Nama / Link Pemilihan Foto</h3>
+              <p className="text-xs text-foreground/60 mt-1 font-sans">
+                Paket foto untuk <strong className="text-foreground">{project.clientName}</strong> telah dibagi menjadi beberapa link:
+              </p>
+            </div>
+
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1 text-left font-sans">
+              {project.subTokens.map((st, idx) => (
+                <button
+                  key={st.id}
+                  onClick={() => {
+                    setActiveSubToken(st);
+                    if (st.selectedPhotoIds && st.selectedPhotoIds.length > 0) {
+                      setSelectedPhotos(new Set(st.selectedPhotoIds));
+                    }
+                    setShowSubTokenSelector(false);
+                    if (typeof window !== "undefined") {
+                      window.history.replaceState(null, '', `${window.location.pathname}?token=${st.id}`);
+                    }
+                  }}
+                  className="w-full p-4 rounded-2xl border border-border hover:border-accent/40 bg-surface-alt/40 hover:bg-accent/5 transition-all flex items-center justify-between group cursor-pointer"
+                >
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors">{st.name}</h4>
+                    <p className="text-xs text-foreground/60">Kuota: <strong className="text-foreground">{st.maxPhotos} foto</strong></p>
+                  </div>
+                  <span className="text-xs font-bold text-accent bg-accent/10 px-3 py-1.5 rounded-xl group-hover:bg-accent group-hover:text-white transition-all">
+                    Pilih Ini →
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowSubTokenSelector(false)}
+              className="w-full py-2 text-xs text-foreground/60 hover:text-foreground underline font-medium cursor-pointer"
+            >
+              Lihat Galeri Utama (Total Kuota {project.maxPhotos} Foto)
+            </button>
           </div>
         </div>
       )}

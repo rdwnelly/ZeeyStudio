@@ -7,11 +7,14 @@ import Link from "next/link";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, updateDoc, doc } from "firebase/firestore";
 
+import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
+
 type Project = {
   id: string;
   clientName: string;
   waNumber: string;
   maxPhotos: number;
+  subTokens?: SubToken[];
   createdAt: string;
   status: string;
   createdBy: string;
@@ -45,6 +48,10 @@ export default function BookingsPage() {
   // Payment Verification State
   const [verifyingProject, setVerifyingProject] = useState<Project | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  // Multi Token Link Modal State
+  const [multiTokenProject, setMultiTokenProject] = useState<Project | null>(null);
+  const [isMultiTokenOpen, setIsMultiTokenOpen] = useState(false);
 
   const router = useRouter();
 
@@ -667,6 +674,17 @@ export default function BookingsPage() {
                         Tandai File Terkirim (Tutup)
                       </button>
                     )}
+
+                    <button
+                      onClick={() => {
+                        setMultiTokenProject(project);
+                        setIsMultiTokenOpen(true);
+                      }}
+                      className="w-full bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 px-3 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                      {project.subTokens && project.subTokens.length > 0 ? `Sub-Token (${project.subTokens.length} Link)` : 'Bagi Token Link (Multi-Link)'}
+                    </button>
                     
                     <div className="flex gap-2 mt-auto pt-2">
                       <Link href={`/client/${project.id}`} target="_blank" className="flex-1 text-center bg-surface-alt border border-border px-3 py-2 rounded-lg text-sm font-medium hover:bg-border transition-colors">
@@ -1000,6 +1018,13 @@ export default function BookingsPage() {
           </div>
         </div>
       )}
+      {/* Multi-Token Link Modal */}
+      <MultiTokenModal
+        isOpen={isMultiTokenOpen}
+        onClose={() => setIsMultiTokenOpen(false)}
+        project={multiTokenProject}
+        onProjectUpdated={fetchProjects}
+      />
     </div>
     </Sidebar>
   );
