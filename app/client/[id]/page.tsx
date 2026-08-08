@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from "firebase/firestore";
 
 import { SubToken } from "@/components/MultiTokenModal";
+import { translations, Language } from "@/lib/client-translations";
 
 declare global {
   interface Window {
@@ -126,6 +127,25 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  
+  // Language translation state
+  const [lang, setLang] = useState<Language>('id');
+  const t = translations[lang];
+
+  useEffect(() => {
+    const savedLang = localStorage.getItem("zeey_client_lang") as Language;
+    if (savedLang === "en" || savedLang === "id") {
+      setLang(savedLang);
+    }
+  }, []);
+
+  const toggleLang = () => {
+    const nextLang = lang === 'id' ? 'en' : 'id';
+    setLang(nextLang);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem("zeey_client_lang", nextLang);
+    }
+  };
   
   // States for flow
   const [showInvoice, setShowInvoice] = useState(false);
@@ -564,7 +584,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               setShowInvoice(false);
               triggerSnapPayment(data.snapToken);
            } else {
-              alert("Gagal memuat modul pembayaran Midtrans.");
+              alert(t.alertSnapLoadFailed);
            }
         } else if (data.qrString) {
            setQrisString(data.qrString);
@@ -574,7 +594,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         if (data.isMidtransError) {
           setMidtransReviewNotice("Midtrans sedang dalam proses peninjauan (Review Bisnis). Silakan gunakan Transfer Manual di bawah untuk menyelesaikan pembayaran.");
         } else {
-          alert("Gagal memuat pembayaran: " + (data.error || "Terjadi kesalahan"));
+          alert(t.alertPaymentLoadFailed(data.error || "Terjadi kesalahan"));
         }
       }
     } catch (err) {
@@ -587,7 +607,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const triggerSnapPayment = async (token: string) => {
     const loaded = await ensureSnapScriptLoaded(snapConfig?.clientKey, snapConfig?.isProduction);
     if (!loaded || !window.snap) {
-       alert("Sistem pembayaran belum siap. Silakan refresh halaman.");
+       alert(t.alertSnapNotReady);
        return;
     }
     setShowInvoice(false);
@@ -606,7 +626,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       },
       onError: function (result: any) {
         console.error('Payment error:', result);
-        alert("Pembayaran gagal atau dibatalkan.");
+        alert(t.alertPaymentFailed);
         setPaymentStatus(null);
       },
       onClose: async function () {
@@ -631,7 +651,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     if (!project) return;
     
     if (!studioWaUrl) {
-      alert("Nomor WhatsApp admin belum dikonfigurasi di sistem. Silakan hubungi fotografer Anda secara manual.");
+      alert(t.alertNoWaNumber);
       return;
     }
     
@@ -837,7 +857,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     }
 
     if (confirmedIds.length === 0) {
-      alert('Tidak ada foto yang terpilih untuk diunduh.');
+      alert(t.alertNoPhotosToDownload);
       return null;
     }
 
@@ -928,7 +948,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       saveAs(blob, `Foto_${project.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.zip`);
     } catch (e: any) {
       console.error('Download ZIP gagal:', e);
-      alert('Gagal mengunduh foto: ' + (e.message || 'Coba lagi.'));
+      alert(t.alertZipFailed(e.message || 'Coba lagi.'));
     } finally {
       setIsZipping(false);
       setZipStatus('idle');
@@ -1009,7 +1029,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       setExportLink(data.folderUrl);
     } catch (err: any) {
       console.error('Export gagal:', err);
-      alert('Gagal mengekspor foto ke Drive: ' + err.message);
+      alert(t.alertExportFailed(err.message));
     } finally {
       setIsExporting(false);
     }
@@ -1027,7 +1047,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       </div>
     </div>
   );
-  if (!project) return <div className="min-h-screen flex items-center justify-center">Project tidak ditemukan.</div>;
+  if (!project) return <div className="min-h-screen flex items-center justify-center font-sans">{t.notFound}</div>;
 
 
   if (showSuccess) {
@@ -1043,10 +1063,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h1 className="text-4xl mb-4">Terima Kasih, {project.clientName}!</h1>
+        <h1 className="text-4xl mb-4">{t.thankYou(project.clientName)}</h1>
         <p className="text-foreground/70 font-sans max-w-md mx-auto mb-8">
-          Pembayaran berhasil dan {confirmedPhotoCount} foto Anda telah dikonfirmasi.
-          Klik tombol di bawah untuk menyimpan foto Anda ke Google Drive.
+          {t.successDesc(confirmedPhotoCount)}
         </p>
 
         <div className="flex flex-col gap-3 mb-6 w-full max-w-sm">
@@ -1054,8 +1073,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           {/* Pesan Sabar Saat Proses */}
           {isExporting && (
             <div className="bg-blue-50/80 border border-blue-200 text-blue-800 text-xs px-4 py-3 rounded-xl mb-2 text-center animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm backdrop-blur-sm">
-              <p>Harap bersabar saat proses menyiapkan folder Google Drive Anda...</p>
-              <p className="font-semibold italic mt-1">"Orang sabar disayang Tuhan" 😇</p>
+              <p>{t.exportingNotice}</p>
+              <p className="font-semibold italic mt-1">{t.exportingQuote}</p>
             </div>
           )}
 
@@ -1066,10 +1085,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Folder Drive Berhasil Dibuat!
+                {t.driveCreatedTitle}
               </p>
               <p className="text-green-700/80 text-xs mb-4">
-                Foto-foto Anda sekarang tersimpan di folder Google Drive baru. Anda bisa membukanya dan menyimpannya ke akun Google Anda.
+                {t.driveCreatedDesc}
               </p>
               <a 
                 href={exportLink} 
@@ -1077,7 +1096,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 rel="noreferrer"
                 className="block w-full bg-green-600 text-white text-center py-3 rounded-lg font-medium text-sm shadow-sm hover:bg-green-700 transition-colors touch-manipulation"
               >
-                Buka Folder Drive Saya
+                {t.openDriveFolder}
               </a>
             </div>
           ) : (
@@ -1094,32 +1113,25 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                    Menyiapkan Drive Anda...
+                    {t.preparingDrive}
                   </>
                 ) : (
                   <>
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
                     </svg>
-                    Unduh Foto Pilihan Saya via Google Drive ⭐
+                    {t.downloadDriveBtn}
                   </>
                 )}
                 <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
               </button>
               {!isExporting && (
                 <p className="text-[11px] text-foreground/50 font-sans text-center -mt-1 px-4 leading-tight mb-2">
-                  Kami akan membuatkan folder Drive khusus berisi foto pilihan Anda secara langsung.
+                  {t.driveHelpText}
                 </p>
               )}
             </>
           )}
-
-          <button
-            onClick={() => setShowSuccess(false)}
-            className="w-full py-3.5 px-4 border border-border rounded-xl text-sm font-medium hover:bg-surface-alt transition-colors font-sans text-foreground/80 cursor-pointer flex items-center justify-center gap-2 mt-2"
-          >
-            ✏️ Ubah / Pilih Ulang Foto
-          </button>
         </div>
       </div>
     );
@@ -1133,8 +1145,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           <svg className="w-20 h-20 text-red-500 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
           </svg>
-          <h2 className="text-3xl font-serif mb-2">Tangkapan Layar Diblokir</h2>
-          <p className="text-white/70 max-w-md">Demi melindungi hak cipta fotografer, tindakan tangkapan layar (screenshot) tidak diizinkan pada galeri ini.</p>
+          <h2 className="text-3xl font-serif mb-2">{t.screenshotTitle}</h2>
+          <p className="text-white/70 max-w-md">{t.screenshotDesc}</p>
         </div>
       )}
 
@@ -1146,39 +1158,51 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             <div className="flex flex-wrap items-center gap-2 mt-1 font-sans">
               <span className="text-[11px] md:text-xs text-foreground/70 bg-surface-alt/70 px-2.5 py-0.5 rounded-full border border-border flex items-center gap-1">
                 <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                <strong className="text-foreground">{photos.length} Foto</strong> Terupload di GDrive
+                {t.photosUploaded(photos.length)}
               </span>
               {activeSubToken ? (
                 <span className="text-[10px] md:text-xs bg-accent/10 text-accent font-semibold px-2.5 py-0.5 rounded-full border border-accent/20">
-                  {activeSubToken.name} ({activeSubToken.maxPhotos} foto)
+                  {activeSubToken.name} ({t.photosCountLabel(activeSubToken.maxPhotos)})
                 </span>
               ) : (
                 <span className="text-[10px] md:text-xs text-foreground/50 uppercase tracking-widest hidden sm:inline">
-                  Pemilihan Foto Eksklusif
+                  {t.exclusiveSelection}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {/* Language Switch Button */}
+            <button 
+              onClick={toggleLang}
+              className="h-9 px-3 flex items-center justify-center gap-1.5 rounded-full bg-surface-alt/80 border border-white/20 text-foreground hover:bg-surface-alt transition-all cursor-pointer backdrop-blur-sm font-sans text-xs font-semibold shadow-sm"
+              title={t.switchLangTitle}
+            >
+              <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.6 9h16.8M3.6 15h16.8" />
+              </svg>
+              <span>{t.switchLangBtn}</span>
+            </button>
             <button 
               onClick={() => setShowPriceList(true)}
-              className="w-10 h-10 md:w-auto md:px-4 flex items-center justify-center gap-2 rounded-full bg-surface-alt/50 border border-white/20 text-foreground/80 hover:bg-surface-alt transition-all cursor-pointer backdrop-blur-sm"
-              title="Daftar Harga"
+              className="w-9 h-9 md:w-auto md:px-4 flex items-center justify-center gap-2 rounded-full bg-surface-alt/50 border border-white/20 text-foreground/80 hover:bg-surface-alt transition-all cursor-pointer backdrop-blur-sm"
+              title={t.extraPrices}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
               </svg>
-              <span className="hidden md:inline text-sm font-medium">Harga Tambahan</span>
+              <span className="hidden md:inline text-sm font-medium">{t.extraPrices}</span>
             </button>
             <button 
               onClick={() => setShowEditorModal(true)}
-              className="w-10 h-10 md:w-auto md:px-4 flex items-center justify-center gap-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-700 hover:bg-purple-500/20 transition-all cursor-pointer backdrop-blur-sm"
-              title="Request Editor"
+              className="w-9 h-9 md:w-auto md:px-4 flex items-center justify-center gap-2 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-700 hover:bg-purple-500/20 transition-all cursor-pointer backdrop-blur-sm"
+              title={t.requestEditor}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
               </svg>
-              <span className="hidden md:inline text-sm font-medium">Request Editor</span>
+              <span className="hidden md:inline text-sm font-medium">{t.requestEditor}</span>
             </button>
           </div>
         </div>
@@ -1189,7 +1213,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="bg-surface/90 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.12)] rounded-full p-2 flex items-center justify-between transition-all duration-300">
           <div className="flex items-center pl-4 gap-3 md:gap-4">
             <div className="flex flex-col">
-              <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">Terpilih</span>
+              <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">{t.selected}</span>
               <div className="flex items-baseline gap-1">
                 <span className={`text-xl font-serif leading-none ${selectedPhotos.size > activeMaxPhotos ? "text-accent" : "text-foreground"}`}>
                   {selectedPhotos.size}
@@ -1200,8 +1224,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
             <div className="h-8 w-[1px] bg-border/50 mx-1 hidden sm:block"></div>
             <div className="hidden sm:flex flex-col">
-              <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">Total GDrive</span>
-              <span className="text-sm font-semibold text-foreground/80 leading-none">{photos.length} Foto</span>
+              <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">{t.totalGDrive}</span>
+              <span className="text-sm font-semibold text-foreground/80 leading-none">{t.photosCountShort(photos.length)}</span>
             </div>
 
             {grandTotal > 0 && (
@@ -1209,7 +1233,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             )}
             {grandTotal > 0 && (
               <div className="flex flex-col animate-in fade-in slide-in-from-left-2">
-                <span className="text-[10px] text-accent/70 uppercase tracking-widest font-medium">Tagihan</span>
+                <span className="text-[10px] text-accent/70 uppercase tracking-widest font-medium">{t.bill}</span>
                 <span className="text-sm font-bold text-accent leading-none">Rp {(grandTotal/1000).toLocaleString('id-ID')}k</span>
               </div>
             )}
@@ -1220,7 +1244,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             disabled={selectedPhotos.size === 0 && Object.keys(selectedAddons).length === 0}
             className="bg-accent text-white px-6 md:px-8 py-3.5 rounded-full font-medium hover:bg-accent-dark transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_14px_rgba(var(--accent-rgb),0.4)] hover:shadow-[0_6px_20px_rgba(var(--accent-rgb),0.6)] hover:-translate-y-0.5 active:translate-y-0"
           >
-            Konfirmasi
+            {t.confirm}
           </button>
         </div>
       </div>
@@ -1232,9 +1256,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       {selectedPhotos.size > activeMaxPhotos && (
         <div className="max-w-7xl mx-auto px-4 mb-4">
           <div className="bg-accent/10 border border-accent/20 text-accent py-3 px-6 rounded-2xl text-center text-sm font-sans flex flex-col md:flex-row items-center justify-center gap-2 animate-in slide-in-from-top-4 fade-in duration-500 shadow-sm">
-            <span>Anda memilih <strong>{extraPhotosCount} foto ekstra</strong> dari batas paket link ({activeMaxPhotos} foto).</span>
+            <span>{t.overLimitText(extraPhotosCount, activeMaxPhotos)}</span>
             <span className="hidden md:inline">•</span>
-            <span className="font-bold">Tambahan: Rp {totalExtraCost.toLocaleString('id-ID')}</span>
+            <span className="font-bold">{t.extraCostText(totalExtraCost.toLocaleString('id-ID'))}</span>
           </div>
         </div>
       )}
@@ -1242,7 +1266,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       {/* Tip for users */}
       <div className="max-w-7xl mx-auto px-4 mb-8 flex justify-center">
         <p className="text-xs text-foreground/50 font-sans italic bg-surface-alt/50 px-4 py-2 rounded-full border border-white/10 backdrop-blur-sm shadow-sm inline-block">
-          💡 Ketuk 1x untuk memilih. Tekan lama pada foto untuk melihat ukuran penuh.
+          {t.hintTip}
         </p>
       </div>
 
@@ -1259,9 +1283,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             <svg className="w-16 h-16 text-foreground/20 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
             </svg>
-            <h3 className="text-xl font-serif text-foreground mb-2">Belum ada foto</h3>
+            <h3 className="text-xl font-serif text-foreground mb-2">{t.noPhotosTitle}</h3>
             <p className="text-foreground/60 max-w-md mx-auto text-sm">
-              Fotografer belum mengunggah foto ke galeri Anda.
+              {t.noPhotosDesc}
             </p>
           </div>
         )}
@@ -1361,29 +1385,29 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8">
-              <h2 className="text-3xl mb-2 font-serif">Foto Tambahan</h2>
+              <h2 className="text-3xl mb-2 font-serif">{t.invoiceTitle}</h2>
               <p className="text-foreground/70 font-sans mb-8">
-                Anda telah memilih lebih banyak foto dari batas paket Anda. Silakan selesaikan pembayaran untuk foto-foto tambahan.
+                {t.invoiceDesc}
               </p>
               
               <div className="space-y-4 mb-8 font-sans">
                 <div className="flex justify-between text-sm pb-4 border-b border-border">
-                  <span className="text-foreground/70">Batas Paket Termasuk</span>
-                  <span className="font-medium">{project.maxPhotos} foto</span>
+                  <span className="text-foreground/70">{t.includedLimit}</span>
+                  <span className="font-medium">{t.photosCountLabel(project.maxPhotos)}</span>
                 </div>
                 <div className="flex justify-between text-sm pb-4 border-b border-border">
-                  <span className="text-foreground/70">Total Terpilih</span>
-                  <span className="font-medium">{selectedPhotos.size} foto</span>
+                  <span className="text-foreground/70">{t.totalSelected}</span>
+                  <span className="font-medium">{t.photosCountLabel(selectedPhotos.size)}</span>
                 </div>
                 {basePackagePrice > 0 && (
                   <div className="flex justify-between text-sm pb-4 border-b border-border">
-                    <span className="text-foreground/70">Paket: {project.packageName || 'Kustom'}</span>
+                    <span className="text-foreground/70">{t.packageLabel(project.packageName || 'Kustom')}</span>
                     <span className="font-medium">Rp {basePackagePrice.toLocaleString('id-ID')}</span>
                   </div>
                 )}
                 {extraPhotosCount > 0 && (
                   <div className="flex justify-between text-sm pb-4 border-b border-border">
-                    <span className="text-foreground/70">Foto Tambahan ({extraPhotosCount} x Rp {activeExtraPhotoPrice.toLocaleString('id-ID')})</span>
+                    <span className="text-foreground/70">{t.extraPhotosLabel(extraPhotosCount, activeExtraPhotoPrice.toLocaleString('id-ID'))}</span>
                     <span className="font-medium">Rp {extraPhotosCost.toLocaleString('id-ID')}</span>
                   </div>
                 )}
@@ -1393,7 +1417,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   return (
                     <div key={id} className="flex justify-between text-sm pb-4 border-b border-border">
                       <span className="text-foreground/70">
-                        {item.name} ({qty} x {item.scheme === 'sudah bayar' ? 'Sudah Dibayar' : `Rp ${item.price.toLocaleString('id-ID')}`})
+                        {item.name} ({qty} x {item.scheme === 'sudah bayar' ? t.alreadyPaid : `Rp ${item.price.toLocaleString('id-ID')}`})
                       </span>
                       <span className={`font-medium ${item.scheme === 'sudah bayar' ? 'text-emerald-600' : ''}`}>
                         {item.scheme === 'sudah bayar' ? 'Rp 0' : `Rp ${(item.price * qty).toLocaleString('id-ID')}`}
@@ -1403,12 +1427,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 })}
                 {dpAmount > 0 && (
                   <div className="flex justify-between text-sm pb-4 border-b border-border text-green-600">
-                    <span>Telah Dibayar (DP / Uang Muka)</span>
+                    <span>{t.dpAmountLabel}</span>
                     <span className="font-medium">- Rp {dpAmount.toLocaleString('id-ID')}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-xl pt-2 font-serif">
-                  <span>Sisa Tagihan</span>
+                  <span>{t.remainingBill}</span>
                   <span className="text-accent">Rp {grandTotal.toLocaleString('id-ID')}</span>
                 </div>
               </div>
@@ -1420,7 +1444,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                   <div>
-                    <strong className="block font-semibold mb-0.5">Metode Utama: Transfer Manual Active</strong>
+                    <strong className="block font-semibold mb-0.5">{t.midtransReviewNoticeTitle}</strong>
                     <span>{midtransReviewNotice}</span>
                   </div>
                 </div>
@@ -1432,9 +1456,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
                     <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                   </div>
-                  <h3 className="font-serif text-lg mb-1 text-foreground">Menunggu Konfirmasi Admin</h3>
+                  <h3 className="font-serif text-lg mb-1 text-foreground">{t.awaitingAdminTitle}</h3>
                   <p className="text-xs font-sans text-foreground/60">
-                    Bukti transfer Anda telah dikirim. Halaman ini akan diperbarui otomatis setelah admin memverifikasi.
+                    {t.awaitingAdminDesc}
                   </p>
                 </div>
               ) : project.paymentProofStatus === 'rejected' ? (
@@ -1442,15 +1466,15 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
                     <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                   </div>
-                  <h3 className="font-serif text-lg mb-1 text-red-900">Bukti Belum Valid</h3>
+                  <h3 className="font-serif text-lg mb-1 text-red-900">{t.proofInvalidTitle}</h3>
                   <p className="text-xs font-sans text-red-700 mb-4">
-                    Admin belum menerima bukti pembayaran yang sesuai. Silakan hubungi admin via WhatsApp.
+                    {t.proofInvalidDesc}
                   </p>
                   <button 
                     onClick={handleWhatsAppConfirmAsync}
                     className="w-full px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white font-medium font-sans rounded-xl text-xs flex items-center justify-center gap-2"
                   >
-                    Hubungi Ulang Admin via WA
+                    {t.contactAdminWa}
                   </button>
                 </div>
               ) : (
@@ -1463,12 +1487,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                         </svg>
                       </div>
                       <div>
-                        <h4 className="font-semibold text-sm text-foreground">Transfer Manual / E-Wallet</h4>
-                        <p className="text-[11px] text-foreground/60">Transfer ke rekening studio & konfirmasi via WA</p>
+                        <h4 className="font-semibold text-sm text-foreground">{t.manualTransferTitle}</h4>
+                        <p className="text-[11px] text-foreground/60">{t.manualTransferDesc}</p>
                       </div>
                     </div>
                     <span className="text-[10px] uppercase font-bold bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
-                      Utama (Aktif)
+                      {t.primaryActiveTag}
                     </span>
                   </div>
 
@@ -1476,12 +1500,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                     <div className="space-y-2.5 mb-4 text-xs">
                       <div className="flex justify-between items-center bg-surface p-3 rounded-xl border border-border">
                         <div>
-                          <span className="text-foreground/50 block text-[10px] uppercase font-medium">Bank / E-Wallet</span>
+                          <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.bankOrEwallet}</span>
                           <span className="font-bold text-foreground text-sm">{manualBankInfo.bankName || "BCA / Bank Transfer"}</span>
                         </div>
                         {manualBankInfo.accountName && (
                           <div className="text-right">
-                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">Atas Nama</span>
+                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.accountName}</span>
                             <span className="font-medium text-foreground">{manualBankInfo.accountName}</span>
                           </div>
                         )}
@@ -1490,7 +1514,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       {manualBankInfo.accountNumber && (
                         <div className="flex justify-between items-center bg-surface p-3 rounded-xl border border-border">
                           <div>
-                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">Nomor Rekening</span>
+                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.accountNumber}</span>
                             <span className="font-mono font-bold text-base text-accent tracking-wider">{manualBankInfo.accountNumber}</span>
                           </div>
                           <button
@@ -1502,7 +1526,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                             }}
                             className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
                           >
-                            {copiedBank ? "✓ Tersalin!" : "Salin No."}
+                            {copiedBank ? t.copied : t.copyNo}
                           </button>
                         </div>
                       )}
@@ -1519,14 +1543,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold font-sans text-center transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
                     >
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                      Konfirmasi Transfer via WhatsApp
+                      {t.confirmViaWa}
                     </a>
                   ) : (
                     <button 
                       onClick={handleWhatsAppConfirmAsync}
                       className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold font-sans text-center transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
                     >
-                      Konfirmasi Transfer via WhatsApp
+                      {t.confirmViaWa}
                     </button>
                   )}
 
@@ -1538,7 +1562,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                         onClick={() => triggerSnapPayment(snapToken)}
                         className="text-xs text-blue-600 hover:text-blue-700 font-medium underline cursor-pointer"
                       >
-                        Atau Bayar Otomatis via Midtrans (Snap)
+                        {t.payViaMidtrans}
                       </button>
                     </div>
                   )}
@@ -1552,7 +1576,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <p className="text-[11px] text-emerald-700 leading-relaxed">
-                    <span className="font-bold">Konfirmasi otomatis aktif.</span> Setelah pembayaran berhasil, halaman ini akan langsung diperbarui secara otomatis tanpa perlu klik tombol apapun.
+                    {t.autoVerificationNotice}
                   </p>
                 </div>
               )}
@@ -1564,14 +1588,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                     onClick={() => setShowInvoice(false)}
                     className="flex-1 py-3 border border-border rounded-xl font-sans font-medium text-sm hover:bg-surface-alt transition-colors cursor-pointer text-foreground/70"
                   >
-                    Tutup
+                    {t.closeBtn}
                   </button>
                   {isMockPayment && (
                     <button
                       onClick={handlePaymentSuccess}
                       className="flex-1 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-dark transition-colors font-sans shadow-md cursor-pointer"
                     >
-                      ✓ Simulasi Berhasil
+                      {t.simulatedSuccessBtn}
                     </button>
                   )}
                 </div>
@@ -1586,7 +1610,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-6 border-b border-border flex justify-between items-center bg-surface-alt/50">
-              <h2 className="text-2xl font-serif">Daftar Harga Resmi</h2>
+              <h2 className="text-2xl font-serif">{t.officialPricelist}</h2>
               <button 
                 onClick={() => setShowPriceList(false)}
                 className="text-foreground/50 hover:text-foreground cursor-pointer"
@@ -1598,7 +1622,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             </div>
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               {priceList.filter(item => item.id !== "extra_photo").length === 0 ? (
-                <p className="text-center text-foreground/60 font-sans py-4">Belum ada daftar harga tambahan.</p>
+                <p className="text-center text-foreground/60 font-sans py-4">{t.emptyPricelist}</p>
               ) : (
                 <div className="space-y-4">
                   {priceList.filter(item => item.id !== "extra_photo").map(item => (
@@ -1625,7 +1649,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 onClick={() => setShowPriceList(false)}
                 className="w-full py-3 bg-foreground text-surface rounded-lg font-medium hover:bg-black transition-colors font-sans cursor-pointer"
               >
-                Tutup
+                {t.closeBtn}
               </button>
             </div>
           </div>
@@ -1637,9 +1661,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-6 md:p-8">
-              <h2 className="text-2xl font-serif mb-2 text-foreground">Request Jasa Editor</h2>
+              <h2 className="text-2xl font-serif mb-2 text-foreground">{t.editorModalTitle}</h2>
               <p className="text-foreground/70 font-sans text-sm mb-6">
-                Punya permintaan khusus untuk editan foto? Sampaikan ke tim editor kami di sini.
+                {t.editorModalDesc}
               </p>
               
               {editorRequestSuccess ? (
@@ -1647,18 +1671,18 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
                   </svg>
-                  <span className="font-medium">Request Berhasil Terkirim!</span>
-                  <span className="text-sm mt-1">Tim kami akan segera memproses.</span>
+                  <span className="font-medium">{t.requestSuccessTitle}</span>
+                  <span className="text-sm mt-1">{t.requestSuccessDesc}</span>
                 </div>
               ) : (
                 <form onSubmit={handleEditorRequestSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Catatan Khusus (Opsional)</label>
+                    <label className="block text-sm font-medium mb-2 text-foreground/80">{t.specialNotesLabel}</label>
                     <textarea 
                       value={editorNotes}
                       onChange={(e) => setEditorNotes(e.target.value)}
                       className="w-full p-4 border border-border rounded-xl bg-background focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all resize-none h-32"
-                      placeholder="Contoh: Tolong hapus jerawat di wajah, ratakan warna kulit, dan buat lebih cerah."
+                      placeholder={t.specialNotesPlaceholder}
                     />
                   </div>
                   
@@ -1668,7 +1692,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       onClick={() => setShowEditorModal(false)}
                       className="flex-1 py-3 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer font-medium"
                     >
-                      Batal
+                      {t.cancelBtn}
                     </button>
                     <button 
                       type="submit"
@@ -1678,7 +1702,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                       {isSubmittingEditor ? (
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                       ) : (
-                        "Kirim Request"
+                        t.submitRequestBtn
                       )}
                     </button>
                   </div>
@@ -1696,9 +1720,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               👤
             </div>
             <div>
-              <h3 className="text-xl md:text-2xl font-serif text-foreground">Pilih Nama / Link Pemilihan Foto</h3>
+              <h3 className="text-xl md:text-2xl font-serif text-foreground">{t.selectNameTitle}</h3>
               <p className="text-xs text-foreground/60 mt-1 font-sans">
-                Paket foto untuk <strong className="text-foreground">{project.clientName}</strong> telah dibagi menjadi beberapa link:
+                {t.selectNameDesc(project.clientName)}
               </p>
             </div>
 
@@ -1720,10 +1744,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 >
                   <div>
                     <h4 className="font-semibold text-foreground text-sm group-hover:text-accent transition-colors">{st.name}</h4>
-                    <p className="text-xs text-foreground/60">Kuota: <strong className="text-foreground">{st.maxPhotos} foto</strong></p>
+                    <p className="text-xs text-foreground/60">{t.quotaText(st.maxPhotos)}</p>
                   </div>
                   <span className="text-xs font-bold text-accent bg-accent/10 px-3 py-1.5 rounded-xl group-hover:bg-accent group-hover:text-white transition-all">
-                    Pilih Ini →
+                    {t.selectThis}
                   </span>
                 </button>
               ))}
@@ -1733,7 +1757,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               onClick={() => setShowSubTokenSelector(false)}
               className="w-full py-2 text-xs text-foreground/60 hover:text-foreground underline font-medium cursor-pointer"
             >
-              Lihat Galeri Utama (Total Kuota {project.maxPhotos} Foto)
+              {t.viewMainGallery(project.maxPhotos)}
             </button>
           </div>
         </div>
