@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3005",
     "build": "next build",
+    "build:cpanel": "next build && node -e \"const fs = require('fs'); if (fs.existsSync('public')) fs.cpSync('public', '.next/standalone/public', {recursive: true}); if (fs.existsSync('.next/static')) fs.cpSync('.next/static', '.next/standalone/.next/static', {recursive: true}); console.log('Build cPanel standalone selesai & aset statis disalin.');\"",
+    "build:export": "next build && cd out && zip -r ../out.zip . && cd ..",
     "start": "next start",
     "lint": "eslint"
   },

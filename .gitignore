@@ -43,3 +43,7 @@ next-env.d.ts
 # Google Drive Service Account
 lib/*.json
 
+# zip archives
+*.zip
+
+
