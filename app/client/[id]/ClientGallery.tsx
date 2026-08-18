@@ -275,10 +275,19 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   useEffect(() => {
     async function init() {
       try {
+        let projectId = resolvedParams.id;
+        if (typeof window !== "undefined") {
+          const pathParts = window.location.pathname.split("/").filter(Boolean);
+          const clientIdx = pathParts.indexOf("client");
+          if (clientIdx !== -1 && pathParts[clientIdx + 1] && pathParts[clientIdx + 1] !== "index") {
+            projectId = decodeURIComponent(pathParts[clientIdx + 1]);
+          }
+        }
+
         // ── Parallel fetch: project + pricelist + settings/profile sekaligus ──
         // Hemat 1-2 detik dibanding sequential (masing-masing ~300-500ms di mobile)
         const [docSnap, priceSnap, profileSnap, paymentSnap] = await Promise.all([
-          getDoc(doc(db, "projects", resolvedParams.id)),
+          getDoc(doc(db, "projects", projectId)),
           getDocs(collection(db, "pricelist")),
           getDoc(doc(db, "settings", "profile")),
           getDoc(doc(db, "settings", "payment")),
@@ -302,7 +311,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         } else {
           // Fallback to localStorage for older projects
           const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
-          found = savedProjects.find((p: Project) => p.id === resolvedParams.id) || null;
+          found = savedProjects.find((p: Project) => p.id === projectId) || null;
         }
 
         // ── Process pricelist ──

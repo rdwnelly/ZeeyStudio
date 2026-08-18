@@ -1,0 +1,21 @@
+# Disable Directory Browsing
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Direct dynamic client routes (/client/<id>) to /client/index.html
+  RewriteRule ^client/(.+)$ /client/index.html [L,QSA]
+
+  # Allow clean URLs fallback for static files
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_FILENAME}.html -f
+  RewriteRule ^(.*)$ $1.html [L]
+
+  # Fallback for non-existent routes
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /404.html [L]
+</IfModule>

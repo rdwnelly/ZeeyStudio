@@ -327,9 +327,15 @@ export default function BookingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientName: project.clientName })
       });
-      const data = await res.json();
       
-      if (data.success && data.folderId) {
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (e) {
+        // Fallback for static HTML 404 response on static hosting
+      }
+      
+      if (data && data.success && data.folderId) {
         const link = `https://drive.google.com/drive/folders/${data.folderId}`;
         await updateStatus(project.id, 'Menunggu Pemilihan', { 
           gdriveLinkHighRes: link,
@@ -339,11 +345,33 @@ export default function BookingsPage() {
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Buat Folder Drive", `Sistem otomatis membuat folder Drive untuk ${project.clientName}`);
       } else {
-        alert("Gagal membuat folder: " + (data.error || "Unknown error"));
+        const manualLink = prompt(
+          `Pembuatan folder otomatis memerlukan server backend Node.js.\n\nSilakan buat/buka folder di Google Drive Anda, lalu tempelkan (paste) Link Folder Google Drive di sini:`
+        );
+        if (manualLink) {
+          const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
+          const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
+          
+          await updateStatus(project.id, project.status === 'Menunggu Pembayaran' ? 'Menunggu Pembayaran' : 'Menunggu Pemilihan', { 
+            gdriveLinkHighRes: manualLink,
+            gdriveFolderId: folderId
+          });
+        }
       }
     } catch (err) {
       console.error(err);
-      alert("Terjadi kesalahan saat membuat folder otomatis.");
+      const manualLink = prompt(
+        `Silakan tempelkan (paste) Link Folder Google Drive untuk klien ${project.clientName} di sini:`
+      );
+      if (manualLink) {
+        const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
+        const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
+        
+        await updateStatus(project.id, project.status === 'Menunggu Pembayaran' ? 'Menunggu Pembayaran' : 'Menunggu Pemilihan', { 
+          gdriveLinkHighRes: manualLink,
+          gdriveFolderId: folderId
+        });
+      }
     } finally {
       setCreatingFolderId(null);
     }
@@ -622,22 +650,20 @@ export default function BookingsPage() {
                       </button>
                     )}
                     
-                    {project.gdriveLinkHighRes && (
+                    {project.gdriveLinkHighRes ? (
                       <button 
                         onClick={() => window.open(project.gdriveLinkHighRes, '_blank')}
-                        className="w-full bg-blue-100 text-blue-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-200 transition-colors shadow-sm cursor-pointer mb-2 flex items-center justify-center gap-2"
+                        className="w-full bg-blue-600 text-white border border-blue-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer mb-1 flex items-center justify-center gap-2"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                         Upload Foto (Buka GDrive)
                       </button>
-                    )}
-                    
-                    {project.status === 'Lunas' && !project.gdriveLinkHighRes && (
-                      <div className="flex flex-col gap-2 mb-2">
+                    ) : (
+                      <div className="flex flex-col gap-2 mb-1">
                         <button 
                           onClick={() => handleCreateFolder(project)} 
                           disabled={creatingFolderId === project.id}
-                          className="w-full bg-blue-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                          className="w-full bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                           {creatingFolderId === project.id ? (
                             <>
@@ -645,7 +671,10 @@ export default function BookingsPage() {
                               Membuat Folder...
                             </>
                           ) : (
-                            "Buat Folder GDrive (Otomatis)"
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                              Buat Folder GDrive (Otomatis)
+                            </>
                           )}
                         </button>
                         
@@ -656,7 +685,7 @@ export default function BookingsPage() {
                               const folderIdMatch = link.match(/folders\/([a-zA-Z0-9-_]+)/) || link.match(/id=([a-zA-Z0-9-_]+)/);
                               const folderId = folderIdMatch ? folderIdMatch[1] : link; // fallback
                               
-                              updateStatus(project.id, 'Menunggu Pemilihan', { 
+                              updateStatus(project.id, project.status === 'Menunggu Pembayaran' ? 'Menunggu Pembayaran' : 'Menunggu Pemilihan', { 
                                 gdriveLinkHighRes: link,
                                 gdriveFolderId: folderId
                               });
