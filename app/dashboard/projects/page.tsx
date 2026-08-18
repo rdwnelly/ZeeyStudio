@@ -6,6 +6,7 @@ import Link from "next/link";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
+import { formatGDriveUrl } from "@/lib/drive-utils";
 
 type Project = {
   id: string;
@@ -157,14 +158,15 @@ export default function ActiveProjectsPage() {
                             Galeri
                           </Link>
                           {project.gdriveLinkHighRes && (
-                            <Link
-                              href={project.gdriveLinkHighRes}
+                            <a
+                              href={formatGDriveUrl(project.gdriveLinkHighRes)}
                               target="_blank"
+                              rel="noopener noreferrer"
                               className="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors text-center flex items-center gap-1"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
                               GDrive
-                            </Link>
+                            </a>
                           )}
                           {isOverdue && (
                             <button
@@ -239,14 +241,15 @@ export default function ActiveProjectsPage() {
                           Lihat Galeri
                         </Link>
                         {project.gdriveLinkHighRes && (
-                          <Link
-                            href={project.gdriveLinkHighRes}
+                          <a
+                            href={formatGDriveUrl(project.gdriveLinkHighRes)}
                             target="_blank"
+                            rel="noopener noreferrer"
                             className="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors text-center flex items-center gap-1"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
                             GDrive (High Res)
-                          </Link>
+                          </a>
                         )}
                       </div>
                     </div>

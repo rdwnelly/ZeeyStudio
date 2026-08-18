@@ -36,8 +36,9 @@ export default function EditorDashboard() {
       }
       
       const link = projectDoc.data().gdriveLinkHighRes;
+      const { formatGDriveUrl } = await import("@/lib/drive-utils");
       
-      window.open(link, '_blank');
+      window.open(formatGDriveUrl(link), '_blank');
     } catch (err) {
       console.error(err);
       alert("Gagal membuka folder Google Drive.");

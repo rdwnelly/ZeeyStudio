@@ -74,12 +74,14 @@ function CreateBookingForm() {
     if (!generatedProject) return;
 
     if (generatedProject.gdriveLinkHighRes) {
-      window.open(generatedProject.gdriveLinkHighRes, '_blank');
+      const { formatGDriveUrl } = await import("@/lib/drive-utils");
+      window.open(formatGDriveUrl(generatedProject.gdriveLinkHighRes), '_blank');
       return;
     }
 
     setIsCreatingFolderInSuccess(true);
     try {
+      const { formatGDriveUrl } = await import("@/lib/drive-utils");
       const folderRes = await fetch('/api/drive/create-project-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,13 +105,14 @@ function CreateBookingForm() {
         if (manualLink) {
           const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
           const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
+          const fullUrl = formatGDriveUrl(manualLink);
           const { updateDoc, doc } = await import("firebase/firestore");
           await updateDoc(doc(db, "projects", generatedProject.id), {
-            gdriveLinkHighRes: manualLink,
+            gdriveLinkHighRes: fullUrl,
             gdriveFolderId: folderId
           });
-          setGeneratedProject(prev => prev ? { ...prev, gdriveLinkHighRes: manualLink, gdriveFolderId: folderId } : null);
-          window.open(manualLink, '_blank');
+          setGeneratedProject(prev => prev ? { ...prev, gdriveLinkHighRes: fullUrl, gdriveFolderId: folderId } : null);
+          window.open(fullUrl, '_blank');
         } else {
           window.open('https://drive.google.com', '_blank');
         }
