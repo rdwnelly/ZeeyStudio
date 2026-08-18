@@ -7,7 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 export default function LoginPage() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -47,13 +47,13 @@ export default function LoginPage() {
         where("username", "==", username),
         where("password", "==", password)
       );
-      
+
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
         const adminDoc = querySnapshot.docs[0].data();
         const authRole = adminDoc.role || "admin";
-        
+
         let accesses = adminDoc.accesses;
         if (!accesses) {
           accesses = authRole === "admin_editor" ? ["editor", "portfolio"] : ["bookings", "portfolio"];
@@ -62,7 +62,7 @@ export default function LoginPage() {
         localStorage.setItem("zeey_auth_role", "admin");
         localStorage.setItem("zeey_auth_access", JSON.stringify(accesses));
         localStorage.setItem("zeey_auth_user", adminDoc.name);
-        
+
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Login", `Admin ${adminDoc.name} berhasil masuk.`);
         router.push("/dashboard");
@@ -79,9 +79,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors duration-300">
-      
+
       {/* Theme Toggle Button */}
-      <button 
+      <button
         onClick={toggleTheme}
         className="absolute top-6 right-6 p-3 rounded-full bg-surface/50 backdrop-blur-sm border border-border text-foreground hover:bg-surface-alt transition-all z-50 shadow-sm cursor-pointer"
         title="Toggle Theme"
@@ -111,7 +111,7 @@ export default function LoginPage() {
 
         {/* Glassmorphism Login Card */}
         <div className="bg-surface/50 backdrop-blur-2xl border border-border rounded-3xl shadow-xl overflow-hidden relative">
-          
+
           {/* Subtle top glare */}
           <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-foreground/20 to-transparent"></div>
 
@@ -124,8 +124,8 @@ export default function LoginPage() {
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                     </div>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       required
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
@@ -140,8 +140,8 @@ export default function LoginPage() {
                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                       <svg className="w-5 h-5 text-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     </div>
-                    <input 
-                      type="password" 
+                    <input
+                      type="password"
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -158,7 +158,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button 
+              <button
                 type="submit"
                 disabled={isLoading}
                 className="w-full bg-foreground text-background py-4 rounded-xl font-bold tracking-wide hover:bg-foreground/80 transition-all duration-300 mt-4 shadow-[0_0_20px_rgba(var(--foreground-rgb),0.1)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center font-sans"

@@ -61,12 +61,65 @@ function CreateBookingForm() {
   const [generatedProject, setGeneratedProject] = useState<Project | null>(null);
   const [isMultiTokenOpen, setIsMultiTokenOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isCreatingFolderInSuccess, setIsCreatingFolderInSuccess] = useState(false);
 
   const handleCopyLink = () => {
     if (!generatedLink) return;
     navigator.clipboard.writeText(generatedLink);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleOpenGDriveInSuccess = async () => {
+    if (!generatedProject) return;
+
+    if (generatedProject.gdriveLinkHighRes) {
+      window.open(generatedProject.gdriveLinkHighRes, '_blank');
+      return;
+    }
+
+    setIsCreatingFolderInSuccess(true);
+    try {
+      const folderRes = await fetch('/api/drive/create-project-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientName: generatedProject.clientName })
+      });
+      const folderData = await folderRes.json();
+
+      if (folderData.success && folderData.folderId) {
+        const link = `https://drive.google.com/drive/folders/${folderData.folderId}`;
+        const { updateDoc, doc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "projects", generatedProject.id), {
+          gdriveLinkHighRes: link,
+          gdriveFolderId: folderData.folderId
+        });
+        setGeneratedProject(prev => prev ? { ...prev, gdriveLinkHighRes: link, gdriveFolderId: folderData.folderId } : null);
+        window.open(link, '_blank');
+      } else {
+        const manualLink = prompt(
+          `Pembuatan folder otomatis memerlukan backend Google Drive API.\n\nSilakan buat/buka folder Google Drive untuk ${generatedProject.clientName}, lalu tempelkan (paste) Link Folder Google Drive di sini:`
+        );
+        if (manualLink) {
+          const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
+          const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
+          const { updateDoc, doc } = await import("firebase/firestore");
+          await updateDoc(doc(db, "projects", generatedProject.id), {
+            gdriveLinkHighRes: manualLink,
+            gdriveFolderId: folderId
+          });
+          setGeneratedProject(prev => prev ? { ...prev, gdriveLinkHighRes: manualLink, gdriveFolderId: folderId } : null);
+          window.open(manualLink, '_blank');
+        } else {
+          window.open('https://drive.google.com', '_blank');
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      window.open('https://drive.google.com', '_blank');
+    } finally {
+      setIsCreatingFolderInSuccess(false);
+    }
   };
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -478,17 +531,24 @@ function CreateBookingForm() {
                 {/* Grid Tombol Aksi */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 font-sans">
                   {/* 1. Upload Foto (Buka GDrive) */}
-                  {generatedProject.gdriveLinkHighRes && (
-                    <a 
-                      href={generatedProject.gdriveLinkHighRes}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-blue-100 hover:bg-blue-200 text-blue-700 border border-blue-200 text-center py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                      Upload Foto (Buka GDrive)
-                    </a>
-                  )}
+                  <button 
+                    type="button"
+                    onClick={handleOpenGDriveInSuccess}
+                    disabled={isCreatingFolderInSuccess}
+                    className="bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 text-center py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {isCreatingFolderInSuccess ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Membuat Folder...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Upload Foto (Buka GDrive)
+                      </>
+                    )}
+                  </button>
 
                   {/* 2. Sub-Token (Bagi Token Link) */}
                   <button
