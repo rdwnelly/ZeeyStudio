@@ -95,27 +95,53 @@ export async function getPhotosInFolder(folderId: string) {
   const drive = await getDriveService();
   try {
     let allFiles: any[] = [];
-    let pageToken: string | undefined = undefined;
+    let folderIdsToSearch = [folderId];
 
-    do {
-      const res: any = await drive.files.list({
-        q: `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`,
-        fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)',
+    // 1. Get subfolder IDs inside parent folder (e.g., 01_Foto_Mentah, 02_Hasil_Edit)
+    try {
+      const subFoldersRes: any = await drive.files.list({
+        q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'files(id, name)',
         spaces: 'drive',
-        pageSize: 1000,
-        pageToken: pageToken,
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
       });
-
-      if (res.data.files && res.data.files.length > 0) {
-        allFiles.push(...res.data.files);
+      if (subFoldersRes.data.files && subFoldersRes.data.files.length > 0) {
+        subFoldersRes.data.files.forEach((f: any) => {
+          if (f.id) folderIdsToSearch.push(f.id);
+        });
       }
+    } catch (e) {
+      console.warn("Notice listing subfolders:", e);
+    }
 
-      pageToken = res.data.nextPageToken || undefined;
-    } while (pageToken);
+    // 2. Fetch image files from parent folder + subfolders
+    for (const targetId of folderIdsToSearch) {
+      let pageToken: string | undefined = undefined;
+      do {
+        const res: any = await drive.files.list({
+          q: `'${targetId}' in parents and mimeType contains 'image/' and trashed=false`,
+          fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)',
+          spaces: 'drive',
+          pageSize: 1000,
+          pageToken: pageToken,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        });
 
-    return allFiles;
+        if (res.data.files && res.data.files.length > 0) {
+          allFiles.push(...res.data.files);
+        }
+
+        pageToken = res.data.nextPageToken || undefined;
+      } while (pageToken);
+    }
+
+    // De-duplicate files by id
+    const uniqueFilesMap = new Map();
+    allFiles.forEach(f => uniqueFilesMap.set(f.id, f));
+
+    return Array.from(uniqueFilesMap.values());
   } catch (err) {
     console.error(`Error fetching photos in folder ${folderId}:`, err);
     throw err;

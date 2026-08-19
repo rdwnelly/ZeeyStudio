@@ -9,6 +9,7 @@ import { doc, getDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from 
 
 import { SubToken } from "@/components/MultiTokenModal";
 import { translations, Language } from "@/lib/client-translations";
+import { extractGDriveFolderId } from "@/lib/drive-utils";
 
 declare global {
   interface Window {
@@ -43,8 +44,9 @@ type Photo = {
   id: string;
   name: string;
   thumbnailUrl: string;
-  previewUrl: string;   // Drive thumbnail s1200 — untuk fullscreen, no server proxy
-  fullUrl: string;      // Server proxy — untuk download high-res
+  previewUrl: string;   // Drive thumbnail s1000 — untuk fullscreen preview
+  fallbackUrl?: string; // Server proxy s300 — thumbnail cepat jika CDN diblokir
+  fullUrl: string;      // Server proxy full — untuk download high-res
 };
 
 type PriceItem = {
@@ -63,15 +65,26 @@ const DEFAULT_PRICELIST: PriceItem[] = [
 // ── SecureImage: Watermark overlay tanpa MutationObserver per-foto ──
 // MutationObserver dipindah ke level gallery (satu observer, bukan per foto)
 // sehingga tidak membebani mobile dengan 100+ observer sekaligus.
-const SecureImage = memo(({ src, alt, isFullscreen = false }: { src: string, alt: string, isFullscreen?: boolean }) => {
+const SecureImage = memo(({ src, fallbackSrc, alt, isFullscreen = false }: { src: string; fallbackSrc?: string; alt: string; isFullscreen?: boolean }) => {
+  const [imgSrc, setImgSrc] = useState(src);
+
+  useEffect(() => {
+    setImgSrc(src);
+  }, [src]);
+
   return (
     <div className="relative w-full h-full flex items-center justify-center">
       <img 
-        src={src} 
+        src={imgSrc} 
         alt={alt} 
         className={`${isFullscreen ? 'max-w-full max-h-full object-contain' : 'w-full h-full object-cover'} select-none pointer-events-none`}
         loading="lazy"
         decoding="async"
+        onError={() => {
+          if (fallbackSrc && imgSrc !== fallbackSrc) {
+            setImgSrc(fallbackSrc);
+          }
+        }}
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       />
@@ -90,12 +103,15 @@ const SecureImage = memo(({ src, alt, isFullscreen = false }: { src: string, alt
 });
 SecureImage.displayName = "SecureImage";
 
-// ── LazyImage: skeleton + native browser lazy loading ──
-// Menggunakan browser native loading="lazy" (didukung semua HP modern:
-// Chrome 77+, Firefox 75+, Safari 15.4+) — lebih reliable dari IntersectionObserver
-// manual yang bermasalah di React Strict Mode (double-mount cleanup race condition).
-const LazyImage = memo(({ src, alt }: { src: string; alt: string }) => {
+// ── LazyImage: skeleton + native browser lazy loading + fallback ──
+const LazyImage = memo(({ src, fallbackSrc, alt }: { src: string; fallbackSrc?: string; alt: string }) => {
+  const [imgSrc, setImgSrc] = useState(src);
   const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(src);
+    setLoaded(false);
+  }, [src]);
 
   return (
     <div className="relative w-full h-full">
@@ -104,7 +120,7 @@ const LazyImage = memo(({ src, alt }: { src: string; alt: string }) => {
         <div className="absolute inset-0 bg-surface-alt animate-pulse rounded-xl" />
       )}
       <img
-        src={src}
+        src={imgSrc}
         alt={alt}
         className={`w-full h-full object-cover select-none pointer-events-none transition-opacity duration-300 ${
           loaded ? 'opacity-100' : 'opacity-0'
@@ -112,6 +128,13 @@ const LazyImage = memo(({ src, alt }: { src: string; alt: string }) => {
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
+        onError={() => {
+          if (fallbackSrc && imgSrc !== fallbackSrc) {
+            setImgSrc(fallbackSrc);
+          } else {
+            setLoaded(true);
+          }
+        }}
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       />
@@ -406,18 +429,27 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         }
 
         // ── Load photos dari Drive ──
-        if (found.gdriveFolderId) {
+        const targetFolderId = 
+          extractGDriveFolderId(found.gdriveFolderId) ||
+          extractGDriveFolderId(found.gdriveLinkHighRes) ||
+          extractGDriveFolderId(found.gdriveLinkWatermark);
+
+        if (targetFolderId) {
           try {
-            const res = await fetch(`/api/drive/list-photos?folderId=${found.gdriveFolderId}`);
+            const res = await fetch(`/api/drive/list-photos?folderId=${encodeURIComponent(targetFolderId)}`);
             const data = await res.json();
             if (res.ok && data.success) {
-              setPhotos(data.photos);
+              setPhotos(data.photos || []);
+              setErrorMsg("");
             } else {
               setErrorMsg(data.error || "Gagal memuat foto dari Google Drive");
             }
           } catch (err) {
             setErrorMsg("Terjadi kesalahan saat memuat foto");
           }
+        } else {
+          setPhotos([]);
+          setErrorMsg("");
         }
         setIsLoading(false);
       } catch (e) {
@@ -878,9 +910,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       name: `foto_${i + 1}.jpg`,
     }));
 
-    if (project.gdriveFolderId) {
+    const downloadFolderId = 
+      extractGDriveFolderId(project.gdriveFolderId) ||
+      extractGDriveFolderId(project.gdriveLinkHighRes) ||
+      extractGDriveFolderId(project.gdriveLinkWatermark);
+
+    if (downloadFolderId) {
       try {
-        const res = await fetch(`/api/drive/list-photos?folderId=${project.gdriveFolderId}`);
+        const res = await fetch(`/api/drive/list-photos?folderId=${encodeURIComponent(downloadFolderId)}`);
         const data = await res.json();
         if (res.ok && data.success && data.photos) {
           // Buat set ID foto yang benar-benar ada di folder Drive klien
@@ -1026,7 +1063,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           projectId: project.id,
           clientName: project.clientName,
           photoIds: photosToDownload.map(p => p.id),
-          sourceFolderId: project.gdriveFolderId
+          sourceFolderId: 
+            extractGDriveFolderId(project.gdriveFolderId) ||
+            extractGDriveFolderId(project.gdriveLinkHighRes) ||
+            extractGDriveFolderId(project.gdriveLinkWatermark)
         })
       });
       
@@ -1336,7 +1376,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 </div>
 
                 {/* LazyImage: hanya load saat masuk viewport */}
-                <LazyImage src={photo.thumbnailUrl} alt={photo.name} />
+                <LazyImage src={photo.thumbnailUrl} fallbackSrc={photo.fallbackUrl || `/api/drive/image?id=${photo.id}&sz=s300`} alt={photo.name} />
 
                 {/* Selection Indicator */}
                 <div className={`absolute top-3 right-3 md:top-4 md:right-4 w-7 h-7 md:w-8 md:h-8 rounded-full border-[1.5px] flex items-center justify-center transition-all duration-300 z-30 ${
@@ -1372,8 +1412,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           </button>
           
           <div className="relative w-full h-full max-w-5xl flex items-center justify-center overflow-hidden">
-            {/* Gunakan previewUrl (Drive CDN s1200) bukan fullUrl (server proxy) untuk fullscreen */}
-            <SecureImage src={viewingPhoto.previewUrl || viewingPhoto.fullUrl} alt={viewingPhoto.name} isFullscreen={true} />
+            {/* Gunakan previewUrl (Drive CDN s1000) atau fallback s1000 proxy untuk fullscreen */}
+            <SecureImage src={viewingPhoto.previewUrl || viewingPhoto.fullUrl} fallbackSrc={viewingPhoto.fallbackUrl || `/api/drive/image?id=${viewingPhoto.id}&sz=s1000`} alt={viewingPhoto.name} isFullscreen={true} />
             
             {/* Watermark Anti-Screenshot (Modal Fullscreen) */}
             <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden opacity-[0.15] mix-blend-overlay flex items-center justify-center">

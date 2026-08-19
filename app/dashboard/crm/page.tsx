@@ -139,6 +139,15 @@ export default function CRMPage() {
         
         const promises = snap.docs.map(d => deleteDoc(doc(db, "projects", d.id)));
         await Promise.all(promises);
+
+        // Clear matching projects from localStorage
+        try {
+          const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
+          const updatedLocal = savedProjects.filter((p: any) => p.waNumber !== waNumber);
+          localStorage.setItem("zeey_projects", JSON.stringify(updatedLocal));
+        } catch (e) {
+          console.warn("Notice updating local storage on delete CRM:", e);
+        }
         
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Hapus Klien", `Menghapus klien ${name} beserta ${total} pesanannya.`);

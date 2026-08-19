@@ -33,12 +33,24 @@ export async function POST(request: Request) {
     const folderId = await createFolder(folderName, parentFolderId);
     if (folderId) {
       await makeFolderPublic(folderId);
+
+      // Create structured subfolders automatically
+      try {
+        const rawFolderId = await createFolder("01_Foto_Mentah", folderId);
+        if (rawFolderId) await makeFolderPublic(rawFolderId);
+
+        const editFolderId = await createFolder("02_Hasil_Edit", folderId);
+        if (editFolderId) await makeFolderPublic(editFolderId);
+      } catch (subErr) {
+        console.warn("Subfolder creation notice:", subErr);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: `Folder ${folderName} created successfully`,
+      message: `Folder ${folderName} created successfully with subfolders`,
       folderId,
+      folderName,
     });
   } catch (error: any) {
     console.error('API Error:', error);

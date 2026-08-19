@@ -1,55 +1,57 @@
-export const dynamic = 'force-static';
-import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
+import { NextRequest, NextResponse } from 'next/server';
 import { getPhotosInFolder } from '@/lib/drive';
+import { extractGDriveFolderId } from '@/lib/drive-utils';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const folderId = searchParams.get('folderId');
+    const searchParams = request.nextUrl.searchParams;
+    let rawFolderId = searchParams.get('folderId') || searchParams.get('folderid') || searchParams.get('id');
 
-    if (!folderId) {
+    // Fallback if searchParams missed it
+    if (!rawFolderId && request.url.includes('?')) {
+      const queryStr = request.url.split('?')[1] || '';
+      const parsed = new URLSearchParams(queryStr);
+      rawFolderId = parsed.get('folderId') || parsed.get('folderid') || parsed.get('id');
+    }
+
+    const cleanFolderId = extractGDriveFolderId(rawFolderId || undefined);
+
+    if (!cleanFolderId) {
       return NextResponse.json(
-        { error: 'folderId parameter is required' },
+        { error: 'Folder Google Drive belum dikonfigurasi atau ID folder tidak valid.' },
         { status: 400 }
       );
     }
 
-    // Extract ID if a full link was passed
-    let cleanFolderId = folderId;
-    if (folderId.includes('drive.google.com/drive/folders/')) {
-      const parts = folderId.split('folders/');
-      if (parts.length > 1) {
-        cleanFolderId = parts[1].split('?')[0].split('/')[0];
-      }
-    } else if (folderId.includes('drive.google.com/file/d/')) {
-      const parts = folderId.split('file/d/');
-      if (parts.length > 1) {
-        cleanFolderId = parts[1].split('/')[0];
-      }
-    }
-
     const photos = await getPhotosInFolder(cleanFolderId);
+
+    // Helper to format thumbnail size reliably across all GDrive URL formats
+    const formatThumbUrl = (url: string | null | undefined, sizeStr: string) => {
+      if (!url) return null;
+      return url
+        .replace(/=s\d+(-c)?$/, `=${sizeStr}`)
+        .replace(/=w\d+-h\d+(-c)?$/, `=${sizeStr}`)
+        .replace(/=s\d+/, `=${sizeStr}`);
+    };
 
     // Map to a cleaner format for the frontend
     const formattedPhotos = photos.map((photo) => {
       const baseThumb = photo.thumbnailLink || null;
 
-      // Gallery thumbnail: s400 — cukup untuk grid 2-column mobile, 4× lebih ringan dari s800
-      let thumbUrl = baseThumb
-        ? baseThumb.replace(/=s\d+$/, '=s400')
-        : `/api/drive/image?id=${photo.id}`;
+      // Gallery thumbnail: s300 — sangat cepat & ringan untuk grid mobile (~20-30KB per foto)
+      let thumbUrl = formatThumbUrl(baseThumb, 's300') || `/api/drive/image?id=${photo.id}&sz=s300`;
 
-      // Preview (fullscreen tap): s1200 — resolusi tinggi, tanpa perlu server proxy
-      let previewUrl = baseThumb
-        ? baseThumb.replace(/=s\d+$/, '=s1200')
-        : `/api/drive/image?id=${photo.id}`;
+      // Preview (fullscreen tap): s1000 — resolusi cukup tinggi, tajam & cepat (~150KB)
+      let previewUrl = formatThumbUrl(baseThumb, 's1000') || `/api/drive/image?id=${photo.id}&sz=s1000`;
 
       return {
         id: photo.id,
         name: photo.name,
         thumbnailUrl: thumbUrl,
         previewUrl: previewUrl,
-        fullUrl: `/api/drive/image?id=${photo.id}`,
+        fallbackUrl: `/api/drive/image?id=${photo.id}&sz=s300`,
+        fullUrl: `/api/drive/image?id=${photo.id}&sz=full`,
       };
     });
 

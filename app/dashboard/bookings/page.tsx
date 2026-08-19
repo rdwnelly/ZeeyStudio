@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, query, updateDoc, doc } from "firebase/firestore";
 
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
+import GDriveUploadModal from "@/components/GDriveUploadModal";
 
 type Project = {
   id: string;
@@ -52,6 +53,7 @@ export default function BookingsPage() {
   // Multi Token Link Modal State
   const [multiTokenProject, setMultiTokenProject] = useState<Project | null>(null);
   const [isMultiTokenOpen, setIsMultiTokenOpen] = useState(false);
+  const [uploadModalProject, setUploadModalProject] = useState<Project | null>(null);
 
   const router = useRouter();
 
@@ -216,6 +218,15 @@ export default function BookingsPage() {
       try {
         const { deleteDoc } = await import("firebase/firestore");
         await deleteDoc(doc(db, "projects", id));
+
+        // Clear from localStorage to prevent re-merging
+        try {
+          const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
+          const updatedLocal = savedProjects.filter((p: any) => p.id !== id);
+          localStorage.setItem("zeey_projects", JSON.stringify(updatedLocal));
+        } catch (e) {
+          console.warn("Notice updating local storage on delete:", e);
+        }
         
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Hapus Pesanan", `Menghapus pesanan klien ${name} (${id})`);
@@ -321,6 +332,17 @@ export default function BookingsPage() {
 
   const handleCreateFolder = async (project: Project) => {
     setCreatingFolderId(project.id);
+    const { formatGDriveUrl } = await import("@/lib/drive-utils");
+
+    if (project.gdriveLinkHighRes) {
+      window.open(formatGDriveUrl(project.gdriveLinkHighRes), '_blank');
+      setCreatingFolderId(null);
+      return;
+    }
+
+    // Open new tab synchronously to bypass popup blockers
+    const newTab = window.open('about:blank', '_blank');
+
     try {
       const res = await fetch('/api/drive/create-project-folder', {
         method: 'POST',
@@ -344,12 +366,17 @@ export default function BookingsPage() {
         
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Buat Folder Drive", `Sistem otomatis membuat folder Drive untuk ${project.clientName}`);
+
+        if (newTab) {
+          newTab.location.href = link;
+        } else {
+          window.open(link, '_blank');
+        }
       } else {
         const manualLink = prompt(
-          `Pembuatan folder otomatis memerlukan server backend Node.js.\n\nSilakan buat/buka folder di Google Drive Anda, lalu tempelkan (paste) Link Folder Google Drive di sini:`
+          `Pembuatan folder otomatis memerlukan backend Google Drive API.\n\nSilakan buat/buka folder di Google Drive Anda, lalu tempelkan (paste) Link Folder Google Drive di sini:`
         );
         if (manualLink) {
-          const { formatGDriveUrl } = await import("@/lib/drive-utils");
           const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
           const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
           const fullUrl = formatGDriveUrl(manualLink);
@@ -358,23 +385,28 @@ export default function BookingsPage() {
             gdriveLinkHighRes: fullUrl,
             gdriveFolderId: folderId
           });
+
+          if (newTab) {
+            newTab.location.href = fullUrl;
+          } else {
+            window.open(fullUrl, '_blank');
+          }
+        } else {
+          const driveHome = 'https://drive.google.com/drive/my-drive';
+          if (newTab) {
+            newTab.location.href = driveHome;
+          } else {
+            window.open(driveHome, '_blank');
+          }
         }
       }
     } catch (err) {
       console.error(err);
-      const manualLink = prompt(
-        `Silakan tempelkan (paste) Link Folder Google Drive untuk klien ${project.clientName} di sini:`
-      );
-      if (manualLink) {
-        const { formatGDriveUrl } = await import("@/lib/drive-utils");
-        const folderIdMatch = manualLink.match(/folders\/([a-zA-Z0-9-_]+)/) || manualLink.match(/id=([a-zA-Z0-9-_]+)/);
-        const folderId = folderIdMatch ? folderIdMatch[1] : manualLink;
-        const fullUrl = formatGDriveUrl(manualLink);
-        
-        await updateStatus(project.id, project.status === 'Menunggu Pembayaran' ? 'Menunggu Pembayaran' : 'Menunggu Pemilihan', { 
-          gdriveLinkHighRes: fullUrl,
-          gdriveFolderId: folderId
-        });
+      const driveHome = 'https://drive.google.com/drive/my-drive';
+      if (newTab) {
+        newTab.location.href = driveHome;
+      } else {
+        window.open(driveHome, '_blank');
       }
     } finally {
       setCreatingFolderId(null);
@@ -654,58 +686,13 @@ export default function BookingsPage() {
                       </button>
                     )}
                     
-                    {project.gdriveLinkHighRes ? (
-                      <button 
-                        onClick={async () => {
-                          const { formatGDriveUrl } = await import("@/lib/drive-utils");
-                          window.open(formatGDriveUrl(project.gdriveLinkHighRes), '_blank');
-                        }}
-                        className="w-full bg-blue-600 text-white border border-blue-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer mb-1 flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        Upload Foto (Buka GDrive)
-                      </button>
-                    ) : (
-                      <div className="flex flex-col gap-2 mb-1">
-                        <button 
-                          onClick={() => handleCreateFolder(project)} 
-                          disabled={creatingFolderId === project.id}
-                          className="w-full bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          {creatingFolderId === project.id ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Membuat Folder...
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-                              Buat Folder GDrive (Otomatis)
-                            </>
-                          )}
-                        </button>
-                        
-                        <button 
-                          onClick={async () => {
-                            const link = prompt("Masukkan Link Google Drive untuk Klien (Folder Pemilihan):");
-                            if (link) {
-                              const { formatGDriveUrl } = await import("@/lib/drive-utils");
-                              const folderIdMatch = link.match(/folders\/([a-zA-Z0-9-_]+)/) || link.match(/id=([a-zA-Z0-9-_]+)/);
-                              const folderId = folderIdMatch ? folderIdMatch[1] : link; // fallback
-                              const fullUrl = formatGDriveUrl(link);
-                              
-                              updateStatus(project.id, project.status === 'Menunggu Pembayaran' ? 'Menunggu Pembayaran' : 'Menunggu Pemilihan', { 
-                                gdriveLinkHighRes: fullUrl,
-                                gdriveFolderId: folderId
-                              });
-                            }
-                          }} 
-                          className="w-full bg-surface-alt border border-border text-foreground px-4 py-2 rounded-xl text-xs font-medium hover:bg-border transition-colors cursor-pointer"
-                        >
-                          Atau Input Manual Link GDrive
-                        </button>
-                      </div>
-                    )}
+                    <button 
+                      onClick={() => setUploadModalProject(project)}
+                      className="w-full bg-blue-600 text-white border border-blue-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer mb-1 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                      Upload Foto (Buka GDrive)
+                    </button>
                     
                     {(project.status === 'Menunggu Pemilihan' || project.status === 'Selesai Difoto') && (
                       <button onClick={() => updateStatus(project.id, 'File Terkirim')} className="w-full bg-foreground text-surface px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-black transition-colors shadow-sm cursor-pointer">
@@ -1061,6 +1048,12 @@ export default function BookingsPage() {
         isOpen={isMultiTokenOpen}
         onClose={() => setIsMultiTokenOpen(false)}
         project={multiTokenProject}
+        onProjectUpdated={fetchProjects}
+      />
+      <GDriveUploadModal
+        isOpen={!!uploadModalProject}
+        onClose={() => setUploadModalProject(null)}
+        project={uploadModalProject}
         onProjectUpdated={fetchProjects}
       />
     </div>

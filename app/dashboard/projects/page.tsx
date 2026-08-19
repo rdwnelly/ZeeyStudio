@@ -72,6 +72,32 @@ export default function ActiveProjectsPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleDelete = async (id: string, name: string) => {
+    if (confirm(`Apakah Anda yakin ingin menghapus proyek klien "${name}"? Tindakan ini tidak dapat dibatalkan.`)) {
+      try {
+        const { deleteDoc, doc } = await import("firebase/firestore");
+        await deleteDoc(doc(db, "projects", id));
+
+        try {
+          const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
+          const updatedLocal = savedProjects.filter((p: any) => p.id !== id);
+          localStorage.setItem("zeey_projects", JSON.stringify(updatedLocal));
+        } catch (e) {
+          console.warn("Notice updating local storage on delete project:", e);
+        }
+        
+        const { logActivity } = await import("@/lib/audit");
+        await logActivity("Hapus Pesanan", `Menghapus pesanan/proyek klien ${name} (${id})`);
+        
+        alert("Proyek berhasil dihapus.");
+        fetchProjects();
+      } catch (err) {
+        console.error("Gagal menghapus", err);
+        alert("Gagal menghapus proyek.");
+      }
+    }
+  };
+
   return (
     <Sidebar>
       <div className="p-6 md:p-10 max-w-5xl mx-auto w-full">
@@ -177,6 +203,13 @@ export default function ActiveProjectsPage() {
                               {sendingWAId === project.id ? 'Mengirim...' : 'Kirim WA Pengingat'}
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDelete(project.id, project.clientName)}
+                            className="p-2 border border-border bg-white text-foreground/50 hover:text-red-600 hover:border-red-300 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus Proyek"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          </button>
                         </div>
                       </div>
                     </div>
