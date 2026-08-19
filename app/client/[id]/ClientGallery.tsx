@@ -415,8 +415,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           console.warn("Failed to prefetch WA number", e);
         }
 
-        // ── KUNCI GALERI: hanya kunci penuh jika status proyek sudah 'File Terkirim' ──
-        const isLocked = found.status === 'File Terkirim';
+        // ── KUNCI GALERI: kunci galeri jika status proyek/subToken sudah 'Selesai' atau 'File Terkirim' ──
+        const isSubDone = matchedSub ? matchedSub.status === 'Selesai' : false;
+        const isProjectDone = found.status === 'Selesai' || found.status === 'File Terkirim';
+        const isLocked = isSubDone || isProjectDone;
         if (isLocked) {
           if (matchedSub && matchedSub.selectedPhotoIds && matchedSub.selectedPhotoIds.length > 0) {
             setSelectedPhotos(new Set(matchedSub.selectedPhotoIds));
@@ -537,6 +539,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   }, []);
 
   const togglePhoto = (id: string) => {
+    const isSubDone = activeSubToken ? activeSubToken.status === 'Selesai' : false;
+    const isProjectDone = project ? (project.status === 'Selesai' || project.status === 'File Terkirim') : false;
+    if (isSubDone || isProjectDone) return;
+
     const newSet = new Set(selectedPhotos);
     if (newSet.has(id)) {
       newSet.delete(id);
@@ -746,7 +752,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     const unsubscribe = onSnapshot(doc(db, "projects", project.id), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.status === 'File Terkirim') {
+        if (data.status === 'File Terkirim' || data.status === 'Selesai') {
           setPaymentStatus('settlement');
           setShowInvoice(false);
           setShowSuccess(true);

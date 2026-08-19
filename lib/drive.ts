@@ -1,7 +1,8 @@
 import { google } from 'googleapis';
 import path from 'path';
+import fs from 'fs';
 
-// Path to the service account credentials file
+// Path to the service account credentials file (used in local dev if present)
 const KEY_FILE_PATH = path.join(process.cwd(), 'lib', 'zeeystudio-503010-46fd8f8fb56b.json');
 
 // Define the scopes required (we need full drive access for folders and files)
@@ -15,14 +16,37 @@ export async function getDriveService() {
     scopes: SCOPES,
   };
 
-  if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+  // Option 1: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+      const parsedKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+      authOptions.credentials = {
+        client_email: parsedKey.client_email,
+        private_key: parsedKey.private_key ? parsedKey.private_key.replace(/\\n/g, '\n') : undefined,
+      };
+    } catch (e) {
+      console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY environment variable:', e);
+    }
+  }
+
+  // Option 2: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
+  if (!authOptions.credentials && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     authOptions.credentials = {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
       // Replace literal '\n' with actual line breaks for the private key
       private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
     };
-  } else {
-    authOptions.keyFile = KEY_FILE_PATH;
+  }
+
+  // Option 3: Local JSON credentials file fallback (if it exists on disk)
+  if (!authOptions.credentials) {
+    if (fs.existsSync(KEY_FILE_PATH)) {
+      authOptions.keyFile = KEY_FILE_PATH;
+    } else {
+      throw new Error(
+        'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables.'
+      );
+    }
   }
 
   const auth = new google.auth.GoogleAuth(authOptions);
