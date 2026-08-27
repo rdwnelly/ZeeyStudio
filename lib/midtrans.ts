@@ -27,6 +27,11 @@ export async function getMidtransConfig(): Promise<MidtransConfig | null> {
   let merchantId = process.env.MIDTRANS_MERCHANT_ID || '';
   let isProduction = process.env.MIDTRANS_IS_PRODUCTION === 'true';
 
+  // Smart auto-detection from key prefix if env var was not explicitly set
+  if (!isProduction && (serverKey.startsWith('Mid-server-') || clientKey.startsWith('Mid-client-'))) {
+    isProduction = true;
+  }
+
   try {
     const settingsSnap = await getDoc(doc(db, 'settings', 'payment'));
     if (settingsSnap.exists()) {
@@ -36,6 +41,8 @@ export async function getMidtransConfig(): Promise<MidtransConfig | null> {
       if (s.midtrans_merchant_id) merchantId = s.midtrans_merchant_id;
       if (typeof s.midtrans_is_production === 'boolean') {
         isProduction = s.midtrans_is_production;
+      } else if (serverKey.startsWith('Mid-server-') || clientKey.startsWith('Mid-client-')) {
+        isProduction = true;
       }
     }
   } catch (e) {

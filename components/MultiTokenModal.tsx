@@ -9,6 +9,7 @@ export type SubToken = {
   name: string;
   maxPhotos: number;
   selectedPhotoIds?: string[];
+  previouslySelectedPhotoIds?: string[];
   status?: 'Menunggu Pemilihan' | 'Selesai';
   completedAt?: string;
 };
@@ -19,6 +20,8 @@ type Project = {
   waNumber: string;
   maxPhotos: number;
   subTokens?: SubToken[];
+  previouslySelectedPhotoIds?: string[];
+  isReopened?: boolean;
   status?: string;
 };
 

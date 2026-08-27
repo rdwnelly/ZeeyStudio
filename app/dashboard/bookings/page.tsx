@@ -28,6 +28,10 @@ type Project = {
   gdriveLinkHighRes?: string;
   paymentProofUrl?: string;
   paymentProofStatus?: 'pending' | 'verified' | 'rejected';
+  selectedPhotoIds?: string[];
+  previouslySelectedPhotoIds?: string[];
+  isReopened?: boolean;
+  reopenedAt?: string;
 };
 
 export default function BookingsPage() {
@@ -236,6 +240,64 @@ export default function BookingsPage() {
     } catch (e) {
       alert("Gagal mengupdate status");
       console.error(e);
+    }
+  };
+
+  const handleReopenProject = async (project: Project) => {
+    const previouslySelected = project.selectedPhotoIds || [];
+    const prevCount = previouslySelected.length;
+    const maxCount = project.maxPhotos || 0;
+    const remaining = Math.max(0, maxCount - prevCount);
+
+    const confirmMsg =
+      `Buka kembali sesi pemilihan foto untuk "${project.clientName}"?\n\n` +
+      `📊 Rincian Kuota:\n` +
+      `• Total Kuota: ${maxCount} foto\n` +
+      `• Sudah Dipilih Sebelumnya: ${prevCount} foto\n` +
+      `• Sisa Kuota Belum Dipilih: ${remaining} foto\n\n` +
+      `Foto yang sudah dipilih/diunduh sebelumnya (${prevCount} foto) akan tetap tersimpan dan ditandai di galeri klien.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setIsLoading(true);
+      const updateData: any = {
+        status: 'Menunggu Pemilihan',
+        isReopened: true,
+        reopenedAt: new Date().toISOString(),
+        previouslySelectedPhotoIds: previouslySelected,
+      };
+
+      if (project.subTokens && project.subTokens.length > 0) {
+        updateData.subTokens = project.subTokens.map(st => ({
+          ...st,
+          status: 'Menunggu Pemilihan' as const,
+          previouslySelectedPhotoIds: st.selectedPhotoIds || [],
+        }));
+      }
+
+      await updateDoc(doc(db, "projects", project.id), updateData);
+
+      const { logActivity } = await import("@/lib/audit");
+      await logActivity("Buka Kembali Proyek", `Membuka kembali sesi pemilihan foto klien ${project.clientName} (${project.id}). Sisa kuota: ${remaining} foto.`);
+
+      await fetchProjects();
+      alert(`Berhasil membuka kembali galeri klien ${project.clientName}! Status diubah menjadi 'Menunggu Pemilihan'.`);
+
+      if (project.waNumber) {
+        let phone = project.waNumber.replace(/[^0-9]/g, '');
+        if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+        const waMsg = `Halo ${project.clientName},\n\nSesi pemilihan foto Anda di Zeey Studio telah dibuka kembali.\nAnda masih memiliki sisa kuota ${remaining} foto yang belum dipilih (dari total ${maxCount} foto paket Anda).\n\nSilakan pilih sisa foto Anda melalui tautan galeri berikut:\n${window.location.origin}/client/${project.id}\n\nTerima kasih,\nZeey Studio`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`;
+        if (confirm("Kirim tautan pemberitahuan WhatsApp ke klien sekarang?")) {
+          window.open(waUrl, '_blank');
+        }
+      }
+    } catch (err: any) {
+      console.error("Gagal membuka kembali:", err);
+      alert("Gagal membuka kembali: " + err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -855,14 +917,16 @@ export default function BookingsPage() {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                       </button>
                       
-                      {userRole === 'owner' && (
-                        <button 
-                          onClick={() => updateStatus(project.id, 'Selesai Difoto')} 
-                          className="w-full text-foreground/50 border border-border px-4 py-2 rounded-xl text-xs font-medium hover:bg-surface-alt transition-colors cursor-pointer"
-                        >
-                          Buka Kembali (Reopen)
-                        </button>
-                      )}
+                      <button 
+                        onClick={() => handleReopenProject(project)} 
+                        className="w-full bg-amber-500/10 border border-amber-500/30 text-amber-700 hover:bg-amber-500/20 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                        title="Buka kembali sesi pemilihan foto untuk memilih sisa kuota"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Buka Kembali (Reopen) Sisa Kuota
+                      </button>
                     </div>
                   </div>
                 ))
@@ -957,6 +1021,21 @@ export default function BookingsPage() {
               {(selectedProject.status === 'Menunggu Pemilihan' || selectedProject.status === 'Selesai Difoto') && (
                 <button onClick={() => { updateStatus(selectedProject.id, 'File Terkirim'); setIsModalOpen(false); }} className="w-full bg-foreground text-surface px-4 py-3.5 rounded-xl text-sm font-medium hover:bg-black transition-colors shadow-sm cursor-pointer">
                   Tandai File Terkirim (Tutup)
+                </button>
+              )}
+
+              {(selectedProject.status === 'File Terkirim' || selectedProject.status === 'Selesai') && (
+                <button 
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    handleReopenProject(selectedProject);
+                  }} 
+                  className="w-full bg-amber-500 text-white px-4 py-3.5 rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Buka Kembali (Reopen) Sisa Kuota
                 </button>
               )}
               

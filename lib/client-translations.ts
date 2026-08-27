@@ -11,6 +11,14 @@ export const translations = {
     switchLangBtn: '🇬🇧 EN',
     switchLangTitle: 'Switch to English',
 
+    // Reopen & Previously Selected Photo Badges
+    reopenedBannerTitle: 'Sesi Pemilihan Dibuka Kembali',
+    reopenedBannerDesc: (prevCount: number, remaining: number, total: number) =>
+      `Anda telah memilih/mengunduh ${prevCount} foto sebelumnya. Silakan pilih ${remaining} foto lagi untuk melengkapi kuota ${total} foto Anda.`,
+    previouslySelectedBadge: '✓ Sudah Dipilih / Diunduh',
+    newSelectionBadge: '+ Foto Baru',
+    quotaRemainingInfo: (prev: number, remaining: number) => `${prev} foto dipilih sebelumnya • Sisa kuota: ${remaining} foto`,
+
     // Screenshot alert
     screenshotTitle: 'Tangkapan Layar Diblokir',
     screenshotDesc: 'Demi melindungi hak cipta fotografer, tindakan tangkapan layar (screenshot) tidak diizinkan pada galeri ini.',
@@ -116,6 +124,14 @@ export const translations = {
     requestEditor: 'Request Retouch',
     switchLangBtn: '🇮🇩 ID',
     switchLangTitle: 'Ganti ke Bahasa Indonesia',
+
+    // Reopen & Previously Selected Photo Badges
+    reopenedBannerTitle: 'Selection Session Reopened',
+    reopenedBannerDesc: (prevCount: number, remaining: number, total: number) =>
+      `You previously selected/downloaded ${prevCount} photos. Please choose ${remaining} more photos to complete your ${total} photo package.`,
+    previouslySelectedBadge: '✓ Selected / Downloaded',
+    newSelectionBadge: '+ New Photo',
+    quotaRemainingInfo: (prev: number, remaining: number) => `${prev} previous photos • Remaining quota: ${remaining} photos`,
 
     // Screenshot alert
     screenshotTitle: 'Screenshot Blocked',

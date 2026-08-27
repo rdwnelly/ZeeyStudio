@@ -16,8 +16,22 @@ export async function getDriveService() {
     scopes: SCOPES,
   };
 
-  // Option 1: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+  // Option 1: Local JSON credentials file (highest priority in development if file exists)
+  if (fs.existsSync(KEY_FILE_PATH)) {
+    try {
+      const fileContent = fs.readFileSync(KEY_FILE_PATH, 'utf8');
+      const parsed = JSON.parse(fileContent);
+      authOptions.credentials = {
+        client_email: parsed.client_email,
+        private_key: parsed.private_key,
+      };
+    } catch (e) {
+      authOptions.keyFile = KEY_FILE_PATH;
+    }
+  }
+
+  // Option 2: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
+  if (!authOptions.credentials && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
     try {
       const parsedKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
       authOptions.credentials = {
@@ -29,24 +43,23 @@ export async function getDriveService() {
     }
   }
 
-  // Option 2: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
+  // Option 3: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
   if (!authOptions.credentials && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    let rawKey = process.env.GOOGLE_PRIVATE_KEY.trim();
+    if ((rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))) {
+      rawKey = rawKey.slice(1, -1);
+    }
+    const cleanKey = rawKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
     authOptions.credentials = {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      // Replace literal '\n' with actual line breaks for the private key
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      private_key: cleanKey,
     };
   }
 
-  // Option 3: Local JSON credentials file fallback (if it exists on disk)
-  if (!authOptions.credentials) {
-    if (fs.existsSync(KEY_FILE_PATH)) {
-      authOptions.keyFile = KEY_FILE_PATH;
-    } else {
-      throw new Error(
-        'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables.'
-      );
-    }
+  if (!authOptions.credentials && !authOptions.keyFile) {
+    throw new Error(
+      'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables.'
+    );
   }
 
   const auth = new google.auth.GoogleAuth(authOptions);

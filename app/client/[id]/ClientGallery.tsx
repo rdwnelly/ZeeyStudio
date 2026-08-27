@@ -33,6 +33,9 @@ type Project = {
   dpAmount?: number;
   pendingPayment?: { orderId: string; amount: number; createdAt: string };
   selectedPhotoIds?: string[];  // disimpan saat pembayaran selesai
+  previouslySelectedPhotoIds?: string[]; // foto yang sudah dikonfirmasi di sesi sebelumnya
+  isReopened?: boolean;
+  reopenedAt?: string;
   completedAt?: string;
   paymentProofUrl?: string;
   paymentProofStatus?: 'pending' | 'verified' | 'rejected';
@@ -170,7 +173,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     }
   };
   
-  // States for flow
+  // States for selection and flow
+  const [previouslySelectedPhotoIds, setPreviouslySelectedPhotoIds] = useState<Set<string>>(new Set());
   const [showInvoice, setShowInvoice] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showPriceList, setShowPriceList] = useState(false);
@@ -206,15 +210,18 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   const ensureSnapScriptLoaded = useCallback((clientKey?: string, isProduction?: boolean): Promise<boolean> => {
     return new Promise((resolve) => {
-      const key = clientKey || process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-      const prod = typeof isProduction === 'boolean'
-        ? isProduction
-        : process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true';
-
+      const key = clientKey || snapConfig?.clientKey || process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
       if (!key) {
         resolve(false);
         return;
       }
+
+      // Auto-detect production mode if client key starts with 'Mid-client-' vs 'SB-Mid-client-'
+      const isProdKey = key.startsWith('Mid-');
+      const isSandboxKey = key.startsWith('SB-');
+      const prod = typeof isProduction === 'boolean'
+        ? isProduction
+        : (isProdKey ? true : (isSandboxKey ? false : process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true'));
 
       const targetUrl = prod
         ? 'https://app.midtrans.com/snap/snap.js'
@@ -222,33 +229,35 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
       const existingScript = document.querySelector('script[src*="snap.js"]') as HTMLScriptElement | null;
       if (existingScript) {
-        if (existingScript.src === targetUrl && window.snap) {
+        if (existingScript.src === targetUrl && (window as any).snap) {
           setIsSnapLoaded(true);
           resolve(true);
           return;
         }
         // Remove outdated or mismatched script tag
         existingScript.remove();
-        if (window.snap) {
-          delete window.snap;
+        if ((window as any).snap) {
+          delete (window as any).snap;
         }
       }
 
       const script = document.createElement('script');
       script.src = targetUrl;
       script.setAttribute('data-client-key', key);
+      script.async = true;
       script.onload = () => {
         setIsSnapLoaded(true);
         resolve(true);
       };
-      script.onerror = () => {
-        console.error("Gagal memuat script Midtrans Snap");
+      script.onerror = (e) => {
+        console.warn(`[Midtrans Snap] Gagal memuat script dari ${targetUrl}`, e);
         resolve(false);
       };
 
       document.body.appendChild(script);
     });
-  }, []);
+  }, [snapConfig]);
+
 
   // ZIP Download state
   const [isZipping, setIsZipping] = useState(false);
@@ -325,6 +334,13 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               accountName: pData.accountName || ""
             });
           }
+          if (pData.midtrans_client_key) {
+            setSnapConfig({
+              clientKey: pData.midtrans_client_key,
+              isProduction: pData.midtrans_is_production
+            });
+            ensureSnapScriptLoaded(pData.midtrans_client_key, pData.midtrans_is_production);
+          }
         }
 
         // ── Process project ──
@@ -365,7 +381,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         }
         setProject(found);
 
-        // ── Process Sub-tokens ──
+        // ── Process Sub-tokens & Previously Selected Photos ──
         let matchedSub: SubToken | undefined;
         if (typeof window !== "undefined") {
           const urlToken = new URLSearchParams(window.location.search).get("token");
@@ -375,14 +391,22 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             }
             if (matchedSub) {
               setActiveSubToken(matchedSub);
-              if (matchedSub.selectedPhotoIds && matchedSub.selectedPhotoIds.length > 0) {
-                setSelectedPhotos(new Set(matchedSub.selectedPhotoIds));
+              const subPrev = matchedSub.previouslySelectedPhotoIds || matchedSub.selectedPhotoIds || [];
+              if (subPrev.length > 0) {
+                const prevSet = new Set(subPrev);
+                setPreviouslySelectedPhotoIds(prevSet);
+                setSelectedPhotos(prevSet);
               }
             } else {
               setShowSubTokenSelector(true);
             }
-          } else if (found.selectedPhotoIds && found.selectedPhotoIds.length > 0) {
-            setSelectedPhotos(new Set(found.selectedPhotoIds));
+          } else {
+            const prev = found.previouslySelectedPhotoIds || found.selectedPhotoIds || [];
+            if (prev.length > 0) {
+              const prevSet = new Set(prev);
+              setPreviouslySelectedPhotoIds(prevSet);
+              setSelectedPhotos(prevSet);
+            }
           }
         }
 
@@ -415,9 +439,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           console.warn("Failed to prefetch WA number", e);
         }
 
-        // ── KUNCI GALERI: kunci galeri jika status proyek/subToken sudah 'Selesai' atau 'File Terkirim' ──
-        const isSubDone = matchedSub ? matchedSub.status === 'Selesai' : false;
-        const isProjectDone = found.status === 'Selesai' || found.status === 'File Terkirim';
+        // ── KUNCI GALERI: kunci galeri jika status proyek/subToken sudah 'Selesai' atau 'File Terkirim' (dan tidak sedang dibuka kembali) ──
+        const isSubDone = matchedSub ? (matchedSub.status === 'Selesai' && !found.isReopened) : false;
+        const isProjectDone = (found.status === 'Selesai' || found.status === 'File Terkirim') && !found.isReopened;
         const isLocked = isSubDone || isProjectDone;
         if (isLocked) {
           if (matchedSub && matchedSub.selectedPhotoIds && matchedSub.selectedPhotoIds.length > 0) {
@@ -485,34 +509,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   // Load Midtrans Snap Script
   useEffect(() => {
-    const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true';
-    const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-    
-    // Only load if client key is configured
-    if (!clientKey) return;
-
-    const scriptUrl = isProduction
-      ? 'https://app.midtrans.com/snap/snap.js'
-      : 'https://app.sandbox.midtrans.com/snap/snap.js';
-
-    // Prevent duplicate script tags
-    if (document.querySelector(`script[src="${scriptUrl}"]`)) {
-      setIsSnapLoaded(true);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = scriptUrl;
-    script.setAttribute('data-client-key', clientKey);
-    script.onload = () => setIsSnapLoaded(true);
-    script.onerror = () => console.error("Gagal memuat script Midtrans Snap");
-    
-    document.body.appendChild(script);
-
-    return () => {
-       // Optional: remove script on cleanup, though usually keeping it is fine for SPA
-    };
-  }, []);
+    ensureSnapScriptLoaded();
+  }, [ensureSnapScriptLoaded]);
 
   useEffect(() => {
     // Detect keyboard shortcuts for screenshots
@@ -539,8 +537,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   }, []);
 
   const togglePhoto = (id: string) => {
-    const isSubDone = activeSubToken ? activeSubToken.status === 'Selesai' : false;
-    const isProjectDone = project ? (project.status === 'Selesai' || project.status === 'File Terkirim') : false;
+    const isSubDone = activeSubToken ? (activeSubToken.status === 'Selesai' && !project?.isReopened) : false;
+    const isProjectDone = project ? ((project.status === 'Selesai' || project.status === 'File Terkirim') && !project.isReopened) : false;
     if (isSubDone || isProjectDone) return;
 
     const newSet = new Set(selectedPhotos);
@@ -793,6 +791,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             return {
               ...st,
               selectedPhotoIds: selectedIds,
+              previouslySelectedPhotoIds: selectedIds,
               status: 'Selesai' as const,
               completedAt: new Date().toISOString()
             };
@@ -812,8 +811,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         const updateData: any = {
           subTokens: updatedSubTokens,
           selectedPhotoIds: Array.from(combinedSelected),
+          previouslySelectedPhotoIds: Array.from(combinedSelected),
           extraRevenue: totalExtraCost,
           selectedAddons: selectedAddons,
+          isReopened: false,
         };
 
         if (isAllSubTokensDone) {
@@ -823,15 +824,19 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         await updateDoc(doc(db, 'projects', project.id), updateData);
         setProject({ ...project, ...updateData });
-        setActiveSubToken({ ...activeSubToken, selectedPhotoIds: selectedIds, status: 'Selesai' });
+        setActiveSubToken({ ...activeSubToken, selectedPhotoIds: selectedIds, previouslySelectedPhotoIds: selectedIds, status: 'Selesai' });
       } else {
-        await updateDoc(doc(db, 'projects', project.id), {
+        const updateData: any = {
           status: 'Selesai',
           extraRevenue: totalExtraCost,
           selectedAddons: selectedAddons,
           selectedPhotoIds: selectedIds,
+          previouslySelectedPhotoIds: selectedIds,
+          isReopened: false,
           completedAt: new Date().toISOString(),
-        });
+        };
+        await updateDoc(doc(db, 'projects', project.id), updateData);
+        setProject({ ...project, ...updateData });
       }
     } catch (e) {
       console.error(e);
@@ -1275,6 +1280,11 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 </span>
                 <span className="text-sm text-foreground/40">/ {activeMaxPhotos}</span>
               </div>
+              {previouslySelectedPhotoIds.size > 0 && (
+                <span className="text-[10px] text-emerald-600 font-medium leading-none mt-0.5 whitespace-nowrap">
+                  ({previouslySelectedPhotoIds.size} dipilih sblmnya)
+                </span>
+              )}
             </div>
 
             <div className="h-8 w-[1px] bg-border/50 mx-1 hidden sm:block"></div>
@@ -1306,6 +1316,25 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
       {/* Top spacing to compensate for fixed header */}
       <div className="h-24 md:h-28"></div>
+
+      {/* Reopened Notification Banner */}
+      {previouslySelectedPhotoIds.size > 0 && (
+        <div className="max-w-7xl mx-auto px-4 mb-4">
+          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-900 dark:text-emerald-200 py-3.5 px-6 rounded-2xl text-center text-sm font-sans flex flex-col md:flex-row items-center justify-center gap-2 shadow-sm animate-in slide-in-from-top-3 fade-in duration-500">
+            <span className="font-semibold flex items-center gap-1.5 shrink-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              {t.reopenedBannerTitle}:
+            </span>
+            <span>
+              {t.reopenedBannerDesc(
+                previouslySelectedPhotoIds.size,
+                Math.max(0, activeMaxPhotos - previouslySelectedPhotoIds.size),
+                activeMaxPhotos
+              )}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Warning Banner if Over Limit */}
       {selectedPhotos.size > activeMaxPhotos && (
@@ -1347,6 +1376,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6 pb-32">
           {photos.map((photo, index) => {
+            const isPreviouslySelected = previouslySelectedPhotoIds.has(photo.id);
             const isSelected = selectedPhotos.has(photo.id);
             // Stagger delay dikurangi: max 8 foto × 25ms = 200ms (was 600ms)
             const animationDelay = `${(index % 8) * 25}ms`;
@@ -1369,9 +1399,23 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                   willChange: 'transform', // GPU compositing untuk scroll halus
                 }}
               >
+                {/* Badge Foto yang Sudah Dipilih/Diunduh Sebelumnya */}
+                {isPreviouslySelected && (
+                  <div className="absolute top-2.5 left-2.5 md:top-3.5 md:left-3.5 z-30 flex items-center gap-1 bg-emerald-600/95 text-white text-[10px] md:text-xs font-semibold px-2 md:px-2.5 py-1 rounded-full shadow-md backdrop-blur-sm border border-emerald-400/40 select-none animate-in fade-in">
+                    <svg className="w-3 h-3 md:w-3.5 md:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{t.previouslySelectedBadge}</span>
+                  </div>
+                )}
+
                 {/* Border selected state */}
                 <div className={`absolute inset-0 z-20 pointer-events-none rounded-2xl border-4 transition-colors duration-300 ${
-                  isSelected ? 'border-accent' : 'border-transparent'
+                  isPreviouslySelected
+                    ? 'border-emerald-500'
+                    : isSelected
+                    ? 'border-accent'
+                    : 'border-transparent'
                 }`} />
 
                 {/* Watermark CSS */}
@@ -1386,7 +1430,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
                 {/* Selection Indicator */}
                 <div className={`absolute top-3 right-3 md:top-4 md:right-4 w-7 h-7 md:w-8 md:h-8 rounded-full border-[1.5px] flex items-center justify-center transition-all duration-300 z-30 ${
-                  isSelected
+                  isPreviouslySelected
+                    ? 'bg-emerald-600 border-emerald-600 text-white scale-110 shadow-[0_2px_10px_rgba(16,185,129,0.5)]'
+                    : isSelected
                     ? 'bg-accent border-accent text-white scale-110 shadow-[0_2px_10px_rgba(var(--accent-rgb),0.5)]'
                     : 'border-white/80 bg-black/30 group-hover:bg-black/50 backdrop-blur-sm'
                 }`}>
