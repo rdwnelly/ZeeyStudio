@@ -24,7 +24,7 @@ const DEFAULT_PRICELIST: PriceItem[] = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profil' | 'pembayaran' | 'harga' | 'admin' | 'panduan' | 'lanjutan'>('profil');
+  const [activeTab, setActiveTab] = useState<'profil' | 'gdrive' | 'pembayaran' | 'harga' | 'admin' | 'panduan' | 'lanjutan'>('profil');
   const router = useRouter();
 
   // --- LANJUTAN / RESET DATA STATE ---
@@ -483,6 +483,13 @@ export default function SettingsPage() {
             className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'profil' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
           >
             Profil Studio
+          </button>
+          <button
+            onClick={() => setActiveTab('gdrive')}
+            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeTab === 'gdrive' ? 'bg-surface border-x border-t border-border border-b-0 text-green-600 font-semibold -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
+          >
+            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+            Google Drive
           </button>
           <button
             onClick={() => setActiveTab('pembayaran')}
@@ -971,26 +978,47 @@ export default function SettingsPage() {
                 </div>
               </form>
             </div>
+          </div>
+        )}
 
-            {/* ── Integrasi Google Drive Service Account Card ─────────────────────────────── */}
+        {/* Tab Content: Google Drive */}
+        {activeTab === 'gdrive' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
-              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-green-500/10 p-3 rounded-xl text-green-600">
-                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-serif">Kredensial Google Drive Service Account</h2>
-                    <span className="inline-flex items-center gap-1 bg-green-500/10 text-green-600 text-xs font-bold px-2.5 py-1 rounded-full">
-                      Cloud Storage
-                    </span>
+              <div className="flex items-start justify-between gap-4 mb-6 pb-6 border-b border-border">
+                <div className="flex items-start gap-4">
+                  <div className="bg-green-500/10 p-3 rounded-xl text-green-600">
+                    <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
+                    </svg>
                   </div>
-                  <p className="text-foreground/60 font-sans text-sm">
-                    Digunakan untuk membuat folder Google Drive klien secara otomatis dan sinkronisasi foto galeri di Vercel/Production.
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h2 className="text-2xl font-serif">Kredensial Google Drive Service Account</h2>
+                      <span className="inline-flex items-center gap-1 bg-green-500/10 text-green-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                        Cloud Storage
+                      </span>
+                    </div>
+                    <p className="text-foreground/60 font-sans text-sm">
+                      Kredensial ini disimpan di database agar pembuatan folder otomatis klien & upload galeri berjalan lancar di server Railway / Vercel.
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGdrive({
+                      client_email: "zeey-studio-bot@zeeystudio-503010.iam.gserviceaccount.com",
+                      private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDWcCUcUbOIWOWA\nx7Za8lbyK5y+pUD5/KkD6113RUKSX5OsZnm2BTo78lBIPiU7WppnP3xHq6r8OVsD\nInQr4HSA9/KVTx7tL/wdC7PE4mGSbRBASzZTSn5YkJatbKMIfDMXQMfn4uypkXZY\numKdj4eOi0OZRk89qZF7b6XmmPHHpKpYx+deDitwFuTXkEbs/KNk2ORYRTGwEwds\nowY3YVCSudLOzVXMso4I3WkZTjVUP7ULppuluMs2UWOpsI8b9aaY6CKDAMYDbKpp\ntDYxkUnSpAIagCWap9+iwar/0DO7zkK7BFf+qUvF9L8AOCTnzL5Uox3jVetn1h5K\n4FBp9OIZAgMBAAECggEACBTkEn1ncKnNr80MYRXq3h0efuvfofGaVWi7K3R7hg8z\n6PvYC0Vb/2g04N12DewupK9WlHqSitzG1+cmQtoRIfmA6wzMkQAC4ShbVH37Uzyo\n2mIgmxfUC6vwAHth6JRftjkNilPPJgkypoo9ubZFU64JdJRwW5X8AuTUtzcH6QVz\nb/mW65LIn0eG2n/WtEGqLtzZ3y+hlG0nxr3PFfsF5TOwBwx5g9oh5s3X2T4BpX1V\nZtaWoABxY6fgCDGqpu3f+wKzeua6STWiDASa9lG5DBz7w2ZGXLC0Iknw/QevGrkd\nGhwpnqA8KNrwPGGjhnl+et26IzGHk/O/GBt195WJAQKBgQDxYyONDDTtP9qr36fT\noX4PM8grRmKIklD6DTJqaljfv7H2Z9zXvEkPCprX/cjcWjDbmPrLBC/wu4NfkbQw\nl5mr5h8l1s7hJQtf3CUivn8GzIgEJRX00UJLzY/m3sKRSSJfCEi5PoBLda2S2Txt\nzWoT36KA3uT1/+xZwkgcWkCPgQKBgQDja118ewKNTtJXfWK92/Uswe0R5EWMC74B\nmi6GhfITDVdIYvu7RvDvyztJfLAa3dnLFWguKcw32NQcmV5o1ldpMIZgmpZ/sIh+\nv+X8eTpRacwpc2cWrgtcteTOJIZcav8IW4MibjC164o/qk8Dm9+S+DLFBCFYwPA7\ncwnyz44emQKBgQDjFsiATmaQeI0pOtzxfTFR7f43sBzMrRIfXED82hXIUdiDnsyl\n7Q2yZ+CqqKfJndPvE+mFCuhrCo2aYEHroQPCM1lESOUR7L7ZrQsGt75bUBn6BEW2\nrxM2qynhIdpbwjjivLFmDMW3t/rWdyahiilsjuybXpZ6VA0vmFYszj+EgQKBgQCa\noJWf3cOOcNlzwz0v+i5pkDGwyJTA8/rs+/hGXyyI57lA7oxaeZG4eWaGQNE8czty\nacu8F49TKYqPJ3iZr6MfUm8LoBBUIaOtCq1FTOfqExVN2bluIkh3cPVxdEQm8lkV\nRaOT9XgJOW12fEXdHk6Vj0x1yKkjv4uX4FATWCw5gQKBgQDpBBmC9DKWRJm4s3oS\n/23MK3fKBSmZOqVHKujW3bOj5BEWSAZOnBXkMe2lQP6iuVoNPevC83BfeQYj9H6b\ttWMEfSTUdUFLx1Tl0aS4ro6bpA8c6acvQ+M9MAc92ytpu/PmmM2wKwM5etVNVcu\nesIVxS9EW2Ugr1PENOWydFYw9g==\n-----END PRIVATE KEY-----\n",
+                      service_account_json: ""
+                    });
+                    alert("Kredensial Service Account bot default berhasil dimuat ke formulir. Silakan klik 'Simpan Google Drive'.");
+                  }}
+                  className="bg-surface-alt hover:bg-border text-foreground px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-border whitespace-nowrap cursor-pointer"
+                >
+                  ⚡ Isi Kredensial Bot Otomatis
+                </button>
               </div>
 
               <form onSubmit={saveGdrive} className="space-y-5 max-w-xl font-sans">
@@ -1008,7 +1036,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm font-semibold mb-2 text-foreground/80">Private Key (PEM)</label>
                   <textarea
-                    rows={4}
+                    rows={6}
                     value={gdrive.private_key}
                     onChange={(e) => setGdrive({ ...gdrive, private_key: e.target.value })}
                     className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-all font-mono text-xs"
@@ -1033,6 +1061,20 @@ export default function SettingsPage() {
                   )}
                 </div>
               </form>
+
+              {/* Panduan Sharing Folder Induk */}
+              <div className="mt-8 pt-6 border-t border-border bg-surface-alt/30 p-4 rounded-2xl">
+                <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                  <span className="text-green-600">📌</span> Panduan Folder Induk "ZeeyStudio"
+                </h3>
+                <p className="text-xs text-foreground/70 leading-relaxed">
+                  Agar bot dapat membuat folder klien secara otomatis:
+                  <br />
+                  1. Buka <strong>Google Drive</strong> Anda, buat folder bernama <strong>ZeeyStudio</strong>.
+                  <br />
+                  2. Klik kanan folder <strong>ZeeyStudio</strong> → <strong>Bagikan (Share)</strong> → masukkan email bot: <code className="bg-background px-1.5 py-0.5 rounded text-green-700 font-mono">zeey-studio-bot@zeeystudio-503010.iam.gserviceaccount.com</code> dengan akses <strong>Editor</strong>.
+                </p>
+              </div>
             </div>
           </div>
         )}
