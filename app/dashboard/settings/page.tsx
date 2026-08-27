@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 
 export type PriceItem = {
   id: string;
@@ -76,6 +76,14 @@ export default function SettingsPage() {
   });
   const [isPaymentSaved, setIsPaymentSaved] = useState(false);
 
+  // --- GOOGLE DRIVE STATE ---
+  const [gdrive, setGdrive] = useState({
+    client_email: "",
+    private_key: "",
+    service_account_json: "",
+  });
+  const [isGdriveSaved, setIsGdriveSaved] = useState(false);
+
 
 
   // --- ADMIN STATE ---
@@ -132,10 +140,10 @@ export default function SettingsPage() {
     // Load Payment from Firestore
     const loadPayment = async () => {
       try {
-        const { getDoc, doc } = await import("firebase/firestore");
-        const docSnap = await getDoc(doc(db, "settings", "payment"));
+        const docRef = doc(db, "settings", "payment");
+        const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setPayment(docSnap.data() as any);
+          setPayment((prev) => ({ ...prev, ...docSnap.data() }));
         }
       } catch (e) {
         console.error("Error loading payment", e);
@@ -143,7 +151,18 @@ export default function SettingsPage() {
     };
     loadPayment();
 
-
+    const loadGdrive = async () => {
+      try {
+        const docRef = doc(db, "settings", "gdrive");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setGdrive((prev) => ({ ...prev, ...docSnap.data() }));
+        }
+      } catch (e) {
+        console.error("Error loading gdrive settings", e);
+      }
+    };
+    loadGdrive();
 
     // Load Admins
     loadAdmins();
@@ -251,16 +270,51 @@ export default function SettingsPage() {
   const savePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { setDoc, doc } = await import("firebase/firestore");
       await setDoc(doc(db, "settings", "payment"), payment);
       setIsPaymentSaved(true);
       setTimeout(() => setIsPaymentSaved(false), 3000);
+      
+      const { logActivity } = await import("@/lib/audit");
+      await logActivity("Pengaturan Pembayaran", "Memperbarui konfigurasi metode pembayaran (Midtrans & Transfer Manual)");
     } catch (e) {
       console.error(e);
-      alert("Gagal menyimpan pengaturan pembayaran");
+      alert("Gagal menyimpan data pembayaran");
     }
   };
 
+  const saveGdrive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let client_email = gdrive.client_email.trim();
+      let private_key = gdrive.private_key.trim();
+      let service_account_json = gdrive.service_account_json.trim();
+
+      if (service_account_json) {
+        try {
+          const parsed = JSON.parse(service_account_json);
+          if (parsed.client_email) client_email = parsed.client_email;
+          if (parsed.private_key) private_key = parsed.private_key;
+        } catch (e) {}
+      }
+
+      await setDoc(doc(db, "settings", "gdrive"), {
+        client_email,
+        private_key,
+        service_account_json,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      setIsGdriveSaved(true);
+      setTimeout(() => setIsGdriveSaved(false), 3000);
+
+      const { logActivity } = await import("@/lib/audit");
+      await logActivity("Pengaturan Google Drive", "Memperbarui kredensial Service Account Google Drive");
+      alert("Kredensial Google Drive berhasil disimpan ke Database!");
+    } catch (e: any) {
+      console.error(e);
+      alert("Gagal menyimpan data Google Drive: " + e.message);
+    }
+  };
 
   // --- LANJUTAN HANDLERS ---
   const handleResetFinanceData = async (type: 'expenses' | 'all') => {
@@ -907,6 +961,69 @@ export default function SettingsPage() {
                     Simpan Transfer Manual
                   </button>
                   {isPaymentSaved && (
+                    <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                      Tersimpan!
+                    </span>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            {/* ── Integrasi Google Drive Service Account Card ─────────────────────────────── */}
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+                <div className="bg-green-500/10 p-3 rounded-xl text-green-600">
+                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-2xl font-serif">Kredensial Google Drive Service Account</h2>
+                    <span className="inline-flex items-center gap-1 bg-green-500/10 text-green-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                      Cloud Storage
+                    </span>
+                  </div>
+                  <p className="text-foreground/60 font-sans text-sm">
+                    Digunakan untuk membuat folder Google Drive klien secara otomatis dan sinkronisasi foto galeri di Vercel/Production.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={saveGdrive} className="space-y-5 max-w-xl font-sans">
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Service Account Client Email</label>
+                  <input
+                    type="email"
+                    value={gdrive.client_email}
+                    onChange={(e) => setGdrive({ ...gdrive, client_email: e.target.value })}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-all font-mono text-sm"
+                    placeholder="zeey-studio-bot@project.iam.gserviceaccount.com"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Private Key (PEM)</label>
+                  <textarea
+                    rows={4}
+                    value={gdrive.private_key}
+                    onChange={(e) => setGdrive({ ...gdrive, private_key: e.target.value })}
+                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-all font-mono text-xs"
+                    placeholder="-----BEGIN PRIVATE KEY-----\nMIIE...-----END PRIVATE KEY-----"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center gap-4">
+                  <button
+                    type="submit"
+                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-3.5 rounded-xl font-medium transition-all shadow-md cursor-pointer w-full md:w-auto flex items-center justify-center gap-2"
+                  >
+                    Simpan Google Drive
+                  </button>
+                  {isGdriveSaved && (
                     <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>

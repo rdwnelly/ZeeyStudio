@@ -30,7 +30,41 @@ export async function getDriveService() {
     }
   }
 
-  // Option 2: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
+  // Option 2: Read from Firestore settings/gdrive (if configured in Dashboard)
+  if (!authOptions.credentials) {
+    try {
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+      const gdriveSnap = await getDoc(doc(db, 'settings', 'gdrive'));
+      if (gdriveSnap.exists()) {
+        const gData = gdriveSnap.data();
+        if (gData.service_account_json) {
+          try {
+            const parsed = JSON.parse(gData.service_account_json);
+            authOptions.credentials = {
+              client_email: parsed.client_email,
+              private_key: parsed.private_key ? parsed.private_key.replace(/\\n/g, '\n') : undefined,
+            };
+          } catch (e) {
+            console.warn('[drive] Failed to parse Firestore service_account_json:', e);
+          }
+        } else if (gData.client_email && gData.private_key) {
+          let rawKey = gData.private_key.trim();
+          if ((rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))) {
+            rawKey = rawKey.slice(1, -1);
+          }
+          authOptions.credentials = {
+            client_email: gData.client_email,
+            private_key: rawKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n'),
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[drive] Firestore settings/gdrive fallback check notice:', e);
+    }
+  }
+
+  // Option 3: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
   if (!authOptions.credentials && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
     try {
       const parsedKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
@@ -43,7 +77,7 @@ export async function getDriveService() {
     }
   }
 
-  // Option 3: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
+  // Option 4: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
   if (!authOptions.credentials && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
     let rawKey = process.env.GOOGLE_PRIVATE_KEY.trim();
     if ((rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))) {
@@ -58,7 +92,7 @@ export async function getDriveService() {
 
   if (!authOptions.credentials && !authOptions.keyFile) {
     throw new Error(
-      'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables.'
+      'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables, or configure in Dashboard Settings.'
     );
   }
 
