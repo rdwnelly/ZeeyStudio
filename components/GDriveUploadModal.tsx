@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatGDriveUrl } from "@/lib/drive-utils";
+import { authFetch } from "@/lib/auth-client";
 
 type GDriveUploadModalProps = {
   isOpen: boolean;
@@ -50,7 +51,7 @@ export default function GDriveUploadModal({
     setIsCreatingFolder(true);
     setStatusMsg({ type: 'info', text: 'Membuat folder di Google Drive...' });
     try {
-      const res = await fetch('/api/drive/create-project-folder', {
+      const res = await authFetch('/api/drive/create-project-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientName: project.clientName })
@@ -118,7 +119,7 @@ export default function GDriveUploadModal({
         formData.append("file", file);
         formData.append("folderId", project.gdriveFolderId);
 
-        const res = await fetch("/api/drive/upload", {
+        const res = await authFetch("/api/drive/upload", {
           method: "POST",
           body: formData,
         });

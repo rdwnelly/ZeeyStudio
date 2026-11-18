@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
-import { collection, doc, setDoc, getDocs, query, orderBy } from "firebase/firestore";
+import { normalizeWaNumber } from "@/lib/phone";
+import { authFetch } from "@/lib/auth-client";
+import { collection, doc, setDoc, getDoc, getDocs, query, orderBy, where } from "firebase/firestore";
 
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
 import GDriveUploadModal from "@/components/GDriveUploadModal";
@@ -87,7 +89,7 @@ function CreateBookingForm() {
 
     setIsCreatingFolderInSuccess(true);
     try {
-      const folderRes = await fetch('/api/drive/create-project-folder', {
+      const folderRes = await authFetch('/api/drive/create-project-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientName: generatedProject.clientName })
@@ -168,9 +170,12 @@ function CreateBookingForm() {
         setAuthRole(currentRole);
         
         // Load Admins
-        const adminSnap = await getDocs(collection(db, "admins"));
-        const admins = adminSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setAdminsList(admins);
+        // Daftar fotografer hanya dapat dibaca Owner (Firestore Security Rules)
+        if (currentRole === "owner") {
+          const adminSnap = await getDocs(collection(db, "admins"));
+          const admins = adminSnap.docs.map(d => ({ id: d.id, name: d.data().name, username: d.data().username }));
+          setAdminsList(admins);
+        }
 
         // Load Pricelist
         const priceSnap = await getDocs(collection(db, "pricelist"));
@@ -224,8 +229,42 @@ function CreateBookingForm() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
-    const shortHash = Math.random().toString(36).substring(2, 6);
-    const id = slug ? `${slug}-${shortHash}` : shortHash;
+    const makeId = () => {
+      const shortHash = Math.random().toString(36).substring(2, 6);
+      return slug ? `${slug}-${shortHash}` : shortHash;
+    };
+    let id = makeId();
+
+    // ── Validasi sebelum menyimpan: jadwal bentrok & klien Blacklist ──
+    try {
+      const warnings: string[] = [];
+      if (shootDate && shootTime) {
+        const sameDay = await getDocs(query(collection(db, "projects"), where("shootDate", "==", shootDate)));
+        const clashes = sameDay.docs.filter(d => d.id !== editParam && d.data().shootTime === shootTime);
+        if (clashes.length > 0) {
+          warnings.push(`⚠️ Jadwal bentrok: sudah ada booking pada ${shootDate} jam ${shootTime} (${clashes.map(d => d.data().clientName).join(", ")}).`);
+        }
+      }
+      if (!editParam && waNumber.trim()) {
+        const target = normalizeWaNumber(waNumber);
+        const blacklisted = await getDocs(query(collection(db, "projects"), where("clientType", "==", "Blacklist")));
+        if (blacklisted.docs.some(d => normalizeWaNumber(d.data().waNumber) === target)) {
+          warnings.push("⚠️ Nomor WhatsApp ini tercatat sebagai klien BLACKLIST di Data Klien.");
+        }
+      }
+      if (warnings.length > 0 && !confirm(`${warnings.join("\n\n")}\n\nTetap lanjutkan menyimpan booking?`)) {
+        setIsSubmitting(false);
+        return;
+      }
+      // Pastikan ID proyek unik (ID dipakai pada tautan galeri klien)
+      if (!editParam) {
+        for (let attempt = 0; attempt < 5 && (await getDoc(doc(db, "projects", id))).exists(); attempt++) {
+          id = makeId();
+        }
+      }
+    } catch (validationErr) {
+      console.warn("Validasi booking dilewati:", validationErr);
+    }
     
     const pkg = priceList.find(p => p.id === selectedPackage);
 
@@ -265,7 +304,7 @@ function CreateBookingForm() {
 
         // Auto create Google Drive Folder
         try {
-          const folderRes = await fetch('/api/drive/create-project-folder', {
+          const folderRes = await authFetch('/api/drive/create-project-folder', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ clientName })
@@ -326,10 +365,7 @@ function CreateBookingForm() {
 
   const createWhatsAppLink = () => {
     if (!generatedProject) return "";
-    let cleanNumber = generatedProject.waNumber.replace(/[^0-9]/g, "");
-    if (cleanNumber.startsWith("0")) {
-      cleanNumber = "62" + cleanNumber.substring(1);
-    }
+    const cleanNumber = normalizeWaNumber(generatedProject.waNumber);
     const message = `Halo ${generatedProject.clientName},\n\nTerima kasih telah melakukan booking di Zeey Studio!\n\nJadwal Anda: ${generatedProject.shootDate} jam ${generatedProject.shootTime}\nPaket: ${generatedProject.packageName || '-'}\n\nSilakan cek detail pesanan dan status Anda di sini: ${generatedLink}`;
     return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
   };

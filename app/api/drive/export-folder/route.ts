@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createFolder, createShortcut, makeFolderPublic } from '@/lib/drive';
+import { createFolder, createShortcut, makeFolderPublic, getFolderIdByName } from '@/lib/drive';
+import { filterDownloadable } from '@/lib/photo-access';
+import { loadProject } from '@/lib/client-project';
+import { extractGDriveFolderId } from '@/lib/drive-utils';
 
 // We use nodejs runtime because googleapis relies on Node.js core modules
 export const runtime = 'nodejs';
@@ -7,10 +10,22 @@ export const maxDuration = 60; // 60 seconds max duration to allow for many phot
 
 export async function POST(request: Request) {
   try {
-    const { projectId, clientName, photoIds, sourceFolderId } = await request.json();
+    const { projectId, clientName, photoIds } = await request.json();
+    // Folder sumber di-resolve di server dari data proyek (tidak dipercaya dari browser)
+    const sourceProject = await loadProject(String(projectId || ''));
+    const sourceFolderId =
+      extractGDriveFolderId(sourceProject?.gdriveFolderId) ||
+      extractGDriveFolderId(sourceProject?.gdriveLinkHighRes) ||
+      extractGDriveFolderId(sourceProject?.gdriveLinkWatermark);
 
     if (!projectId || !clientName || !photoIds || !Array.isArray(photoIds) || photoIds.length === 0) {
       return NextResponse.json({ error: 'Data tidak lengkap atau tidak ada foto yang dipilih.' }, { status: 400 });
+    }
+
+    // Hanya foto pilihan pada proyek yang sudah dibayar yang boleh diekspor
+    const { allowed } = await filterDownloadable(projectId, photoIds);
+    if (allowed.length === 0) {
+      return NextResponse.json({ error: 'Foto belum dapat diekspor: pembayaran belum selesai atau foto tidak termasuk pilihan.' }, { status: 403 });
     }
 
     console.log(`Starting export for project ${projectId} (${clientName}), ${photoIds.length} photos`);
@@ -21,7 +36,15 @@ export async function POST(request: Request) {
     // Create it alongside the source folder (or in root if sourceFolderId is not provided)
     // To create it alongside, we would need the parent ID of the source folder.
     // For simplicity, we'll create it in the root folder of the Service Account (which is what we get when parentId is omitted).
-    const newFolderId = await createFolder(folderName);
+    // Simpan di dalam folder induk "ZeeyStudio" agar mudah dikelola studio;
+    // bila tidak ditemukan, gunakan root milik Service Account (perilaku lama).
+    let parentId: string | undefined;
+    try {
+      parentId = (await getFolderIdByName('ZeeyStudio')) || undefined;
+    } catch {
+      parentId = undefined;
+    }
+    const newFolderId = await createFolder(folderName, parentId);
     
     if (!newFolderId) {
       throw new Error('Gagal membuat folder Google Drive.');
@@ -39,8 +62,8 @@ export async function POST(request: Request) {
     const results: Array<{ id: string; status: 'success' | 'error' }> = [];
     const BATCH_SIZE = 5;
 
-    for (let i = 0; i < photoIds.length; i += BATCH_SIZE) {
-      const batch = photoIds.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < allowed.length; i += BATCH_SIZE) {
+      const batch = allowed.slice(i, i + BATCH_SIZE);
       const batchPromises = batch.map(async (fileId: string, batchIndex: number) => {
         const globalIndex = i + batchIndex;
         try {
@@ -61,7 +84,7 @@ export async function POST(request: Request) {
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
 
-      if (i + BATCH_SIZE < photoIds.length) {
+      if (i + BATCH_SIZE < allowed.length) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }

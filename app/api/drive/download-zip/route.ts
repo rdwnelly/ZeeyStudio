@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDriveService } from '@/lib/drive';
+import { filterDownloadable } from '@/lib/photo-access';
 import JSZip from 'jszip';
 
 // Force Node.js runtime for Google Drive API access
@@ -17,11 +18,20 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const photos: { id: string; name: string }[] = body.photos || [];
+    const requested: { id: string; name: string }[] = body.photos || [];
     const clientName: string = body.clientName || 'Klien';
+    const projectId: string = body.projectId || '';
 
-    if (photos.length === 0) {
+    if (requested.length === 0) {
       return NextResponse.json({ error: 'Tidak ada foto untuk diunduh' }, { status: 400 });
+    }
+
+    // Hanya foto pilihan pada proyek yang sudah dibayar yang boleh masuk ZIP
+    const { allowed } = await filterDownloadable(projectId, requested.map(p => p.id));
+    const allowedSet = new Set(allowed);
+    const photos = requested.filter(p => allowedSet.has(p.id));
+    if (photos.length === 0) {
+      return NextResponse.json({ error: 'Foto belum dapat diunduh: pembayaran belum selesai atau foto tidak termasuk pilihan.' }, { status: 403 });
     }
 
     const drive = await getDriveService();

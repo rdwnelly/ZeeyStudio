@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getDriveService } from '@/lib/drive';
+import { filterDownloadable } from '@/lib/photo-access';
 
 export async function GET(request: Request) {
   try {
@@ -13,9 +14,16 @@ export async function GET(request: Request) {
     }
 
     const drive = await getDriveService();
+    const projectId = searchParams.get('projectId') || '';
+
+    // Resolusi penuh hanya untuk foto pilihan pada proyek yang sudah dibayar
+    const canServeOriginal = async () => (await filterDownloadable(projectId, [id])).allowed.length > 0;
 
     // If full resolution is explicitly requested for download/export
     if (sz === 'full' || sz === 'media') {
+      if (!(await canServeOriginal())) {
+        return new NextResponse('Forbidden', { status: 403 });
+      }
       const response = await drive.files.get(
         { fileId: id, alt: 'media', supportsAllDrives: true },
         { responseType: 'stream' }
@@ -58,7 +66,11 @@ export async function GET(request: Request) {
       console.warn(`Notice: Could not fetch thumbnail for ${id}, falling back to full media`, thumbErr);
     }
 
-    // Fallback to media stream if thumbnail fetching fails
+    // Fallback to media stream if thumbnail fetching fails — hanya bila foto boleh diunduh,
+    // agar thumbnail yang gagal tidak menjadi celah mengambil berkas asli tanpa membayar.
+    if (!(await canServeOriginal())) {
+      return new NextResponse('Thumbnail not available', { status: 404 });
+    }
     const response = await drive.files.get(
       { fileId: id, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream' }

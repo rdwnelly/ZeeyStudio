@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
+import { normalizeWaNumber } from "@/lib/phone";
 import { collection, getDocs } from "firebase/firestore";
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
 import { formatGDriveUrl } from "@/lib/drive-utils";
@@ -62,10 +63,7 @@ export default function ActiveProjectsPage() {
 
   const handleSendWAReminder = async (project: Project) => {
     const message = `Halo ${project.clientName},\n\nKami mengingatkan bahwa Anda memiliki foto yang belum dipilih.\nSilakan segera memilih foto Anda melalui link galeri Anda agar tim kami dapat segera memprosesnya.\n\nTerima kasih,\nZeey Studio`;
-    let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
-    if (cleanNumber.startsWith("0")) {
-        cleanNumber = "62" + cleanNumber.substring(1);
-    }
+    const cleanNumber = normalizeWaNumber(project.waNumber);
     const waUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
     window.open(waUrl, '_blank');
   };
@@ -75,10 +73,7 @@ export default function ActiveProjectsPage() {
       alert("Nomor WhatsApp klien tidak tersedia.");
       return;
     }
-    let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
-    if (cleanNumber.startsWith("0")) {
-      cleanNumber = "62" + cleanNumber.substring(1);
-    }
+    const cleanNumber = normalizeWaNumber(project.waNumber);
     const link = `${window.location.origin}/client/${project.id}`;
     let message = "";
     if (project.status === 'Selesai' || project.status === 'File Terkirim' || project.paymentProofStatus === 'verified') {
@@ -165,8 +160,7 @@ export default function ActiveProjectsPage() {
       alert(`Berhasil membuka kembali galeri klien ${project.clientName}! Status kini aktif di 'Menunggu Pemilihan'.`);
 
       if (project.waNumber) {
-        let phone = project.waNumber.replace(/[^0-9]/g, '');
-        if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+        const phone = normalizeWaNumber(project.waNumber);
         const waMsg = `Halo ${project.clientName},\n\nSesi pemilihan foto Anda di Zeey Studio telah dibuka kembali.\nAnda memiliki sisa kuota ${remaining} foto yang belum dipilih (dari total ${maxCount} foto paket Anda).\n\nSilakan pilih sisa foto Anda melalui tautan galeri berikut:\n${window.location.origin}/client/${project.id}\n\nTerima kasih,\nZeey Studio`;
         const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`;
         if (confirm("Kirim pemberitahuan WhatsApp ke klien sekarang?")) {

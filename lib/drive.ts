@@ -1,103 +1,49 @@
 import { google } from 'googleapis';
-import path from 'path';
-import fs from 'fs';
-
-// Path to the service account credentials file (used in local dev if present)
-const KEY_FILE_PATH = path.join(process.cwd(), 'lib', 'zeeystudio-503010-46fd8f8fb56b.json');
 
 // Define the scopes required (we need full drive access for folders and files)
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
+
+function cleanPrivateKey(key: string): string {
+  let k = key.trim();
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) k = k.slice(1, -1);
+  return k.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+}
+
+/**
+ * Kredensial Service Account Google Drive — HANYA dari variabel lingkungan server:
+ *  - GOOGLE_SERVICE_ACCOUNT_KEY  = isi JSON service account (satu baris), atau
+ *  - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY
+ * Tidak lagi dibaca dari Firestore maupun berkas JSON di folder proyek.
+ */
+export function getDriveCredentials(): { client_email: string; private_key: string } | null {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+      const parsed = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+      if (parsed.client_email && parsed.private_key) {
+        return { client_email: parsed.client_email, private_key: cleanPrivateKey(parsed.private_key) };
+      }
+    } catch (e) {
+      console.error('GOOGLE_SERVICE_ACCOUNT_KEY bukan JSON yang valid:', e);
+    }
+  }
+  if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    return { client_email: process.env.GOOGLE_CLIENT_EMAIL.trim(), private_key: cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY) };
+  }
+  return null;
+}
 
 /**
  * Initializes and returns an authenticated Google Drive service instance.
  */
 export async function getDriveService() {
-  let authOptions: any = {
-    scopes: SCOPES,
-  };
-
-  // Option 1: Local JSON credentials file (highest priority in development if file exists)
-  if (fs.existsSync(KEY_FILE_PATH)) {
-    try {
-      const fileContent = fs.readFileSync(KEY_FILE_PATH, 'utf8');
-      const parsed = JSON.parse(fileContent);
-      authOptions.credentials = {
-        client_email: parsed.client_email,
-        private_key: parsed.private_key,
-      };
-    } catch (e) {
-      authOptions.keyFile = KEY_FILE_PATH;
-    }
-  }
-
-  // Option 2: Read from Firestore settings/gdrive (if configured in Dashboard)
-  if (!authOptions.credentials) {
-    try {
-      const { doc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase');
-      const gdriveSnap = await getDoc(doc(db, 'settings', 'gdrive'));
-      if (gdriveSnap.exists()) {
-        const gData = gdriveSnap.data();
-        if (gData.service_account_json) {
-          try {
-            const parsed = JSON.parse(gData.service_account_json);
-            authOptions.credentials = {
-              client_email: parsed.client_email,
-              private_key: parsed.private_key ? parsed.private_key.replace(/\\n/g, '\n') : undefined,
-            };
-          } catch (e) {
-            console.warn('[drive] Failed to parse Firestore service_account_json:', e);
-          }
-        } else if (gData.client_email && gData.private_key) {
-          let rawKey = gData.private_key.trim();
-          if ((rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))) {
-            rawKey = rawKey.slice(1, -1);
-          }
-          authOptions.credentials = {
-            client_email: gData.client_email,
-            private_key: rawKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n'),
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('[drive] Firestore settings/gdrive fallback check notice:', e);
-    }
-  }
-
-  // Option 3: Full JSON string in GOOGLE_SERVICE_ACCOUNT_KEY
-  if (!authOptions.credentials && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-    try {
-      const parsedKey = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
-      authOptions.credentials = {
-        client_email: parsedKey.client_email,
-        private_key: parsedKey.private_key ? parsedKey.private_key.replace(/\\n/g, '\n') : undefined,
-      };
-    } catch (e) {
-      console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY environment variable:', e);
-    }
-  }
-
-  // Option 4: Individual GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables
-  if (!authOptions.credentials && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    let rawKey = process.env.GOOGLE_PRIVATE_KEY.trim();
-    if ((rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))) {
-      rawKey = rawKey.slice(1, -1);
-    }
-    const cleanKey = rawKey.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
-    authOptions.credentials = {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: cleanKey,
-    };
-  }
-
-  if (!authOptions.credentials && !authOptions.keyFile) {
+  const credentials = getDriveCredentials();
+  if (!credentials) {
     throw new Error(
-      'Google Drive service account credentials missing. Please set GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY or GOOGLE_SERVICE_ACCOUNT_KEY in environment variables, or configure in Dashboard Settings.'
+      'Kredensial Google Drive belum diatur. Isi GOOGLE_SERVICE_ACCOUNT_KEY (JSON service account) ' +
+      'atau GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY di variabel lingkungan server.'
     );
   }
-
-  const auth = new google.auth.GoogleAuth(authOptions);
-
+  const auth = new google.auth.GoogleAuth({ scopes: SCOPES, credentials });
   return google.drive({ version: 'v3', auth });
 }
 

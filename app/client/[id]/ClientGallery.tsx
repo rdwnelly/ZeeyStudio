@@ -4,12 +4,11 @@ import { useState, useEffect, use, useRef, useCallback, memo } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { saveAs } from "file-saver";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from "firebase/firestore";
 
 import { SubToken } from "@/components/MultiTokenModal";
 import { translations, Language } from "@/lib/client-translations";
-import { extractGDriveFolderId } from "@/lib/drive-utils";
+import { calculateBill, withDefaultPrices } from "@/lib/billing";
+import { waLink } from "@/lib/phone";
 
 declare global {
   interface Window {
@@ -20,18 +19,15 @@ declare global {
 type Project = {
   id: string;
   clientName: string;
-  waNumber: string;
-  gdriveLinkWatermark: string;
-  gdriveLinkHighRes: string;
   maxPhotos: number;
+  hasDriveFolder?: boolean; // tautan Drive tidak dikirim ke browser klien
   subTokens?: SubToken[];
   createdAt: string;
-  gdriveFolderId?: string;
   status?: string;
   packagePrice?: number;
   packageName?: string;
   dpAmount?: number;
-  pendingPayment?: { orderId: string; amount: number; createdAt: string };
+  selectedAddons?: Record<string, number>;
   selectedPhotoIds?: string[];  // disimpan saat pembayaran selesai
   previouslySelectedPhotoIds?: string[]; // foto yang sudah dikonfirmasi di sesi sebelumnya
   isReopened?: boolean;
@@ -206,6 +202,15 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   // Midtrans states
   const [snapToken, setSnapToken] = useState<string | null>(null);
   const [snapConfig, setSnapConfig] = useState<{ clientKey?: string; isProduction?: boolean } | null>(null);
+
+  // QRIS langsung ke merchant (QR DANA Bisnis)
+  type QrisPayment = { orderId: string; amount: number; baseAmount: number; uniqueCode: number; qrString: string; qrUrl?: string; checkoutUrl?: string; merchantName: string; expiresAt: string; autoVerify: boolean };
+  const [qrisSetup, setQrisSetup] = useState<{ enabled: boolean; autoVerify: boolean; merchantName: string }>({ enabled: false, autoVerify: false, merchantName: "" });
+  const [qrisPayment, setQrisPayment] = useState<QrisPayment | null>(null);
+  const [qrisError, setQrisError] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const qrisPaymentRef = useRef<QrisPayment | null>(null);
+  useEffect(() => { qrisPaymentRef.current = qrisPayment; }, [qrisPayment]);
   const [isSnapLoaded, setIsSnapLoaded] = useState(false);
 
   const ensureSnapScriptLoaded = useCallback((clientKey?: string, isProduction?: boolean): Promise<boolean> => {
@@ -316,64 +321,31 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           }
         }
 
-        // ── Parallel fetch: project + pricelist + settings/profile sekaligus ──
-        // Hemat 1-2 detik dibanding sequential (masing-masing ~300-500ms di mobile)
-        const [docSnap, priceSnap, profileSnap, paymentSnap] = await Promise.all([
-          getDoc(doc(db, "projects", projectId)),
-          getDocs(collection(db, "pricelist")),
-          getDoc(doc(db, "settings", "profile")),
-          getDoc(doc(db, "settings", "payment")),
-        ]);
+        // ── Satu permintaan ke server: proyek (versi aman) + harga + info bayar + WA studio ──
+        // Galeri tidak lagi membaca Firestore langsung (dikunci oleh Security Rules).
+        const initRes = await fetch(`/api/client/project?id=${encodeURIComponent(projectId)}`);
+        const initData = await initRes.json().catch(() => ({}));
 
-        if (paymentSnap.exists()) {
-          const pData = paymentSnap.data();
-          if (pData.bankName || pData.accountNumber) {
-            setManualBankInfo({
-              bankName: pData.bankName || "",
-              accountNumber: pData.accountNumber || "",
-              accountName: pData.accountName || ""
-            });
-          }
-          if (pData.midtrans_client_key) {
-            setSnapConfig({
-              clientKey: pData.midtrans_client_key,
-              isProduction: pData.midtrans_is_production
-            });
-            ensureSnapScriptLoaded(pData.midtrans_client_key, pData.midtrans_is_production);
-          }
+        const pay = initData.payment || {};
+        if (pay.bankName || pay.accountNumber) {
+          setManualBankInfo({ bankName: pay.bankName || "", accountNumber: pay.accountNumber || "", accountName: pay.accountName || "" });
+        }
+        setQrisSetup({ enabled: !!pay.qrisEnabled, autoVerify: !!pay.qrisAutoVerify, merchantName: pay.qrisMerchantName || "" });
+        if (pay.midtransClientKey) {
+          setSnapConfig({ clientKey: pay.midtransClientKey, isProduction: pay.midtransIsProduction });
+          ensureSnapScriptLoaded(pay.midtransClientKey, pay.midtransIsProduction);
         }
 
         // ── Process project ──
-        let found: Project | null = null;
-        if (docSnap.exists()) {
-          found = { id: docSnap.id, ...docSnap.data() } as Project;
-        } else {
+        let found: Project | null = initRes.ok && initData.project ? (initData.project as Project) : null;
+        if (!found) {
           // Fallback to localStorage for older projects
           const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
           found = savedProjects.find((p: Project) => p.id === projectId) || null;
         }
 
-        // ── Process pricelist ──
-        const pricesMap = new Map<string, PriceItem>();
-        if (!priceSnap.empty) {
-          priceSnap.docs.forEach(d => {
-            const data = d.data();
-            const itemId = data.id || d.id;
-            if (!pricesMap.has(itemId)) {
-              pricesMap.set(itemId, { ...data, id: itemId } as PriceItem);
-            }
-          });
-        }
-        const defaultSystemPrices: PriceItem[] = [
-          { id: "extra_photo", name: "Foto Tambahan", price: 50000, unit: "per foto", isSystem: true },
-          { id: "editor_request", name: "Jasa Editor (Retouch)", price: 100000, unit: "per request", isSystem: true }
-        ];
-        defaultSystemPrices.forEach(def => {
-          if (!pricesMap.has(def.id)) pricesMap.set(def.id, def);
-        });
-        const prices = Array.from(pricesMap.values());
-        prices.sort((a, b) => (a.isSystem === b.isSystem ? 0 : a.isSystem ? -1 : 1));
-        setPriceList(prices);
+        // ── Process pricelist (sudah digabung dengan item sistem bawaan di server) ──
+        setPriceList(withDefaultPrices((initData.priceList || []) as PriceItem[]) as PriceItem[]);
 
         if (!found) {
           setIsLoading(false);
@@ -391,7 +363,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             }
             if (matchedSub) {
               setActiveSubToken(matchedSub);
-              const subPrev = matchedSub.previouslySelectedPhotoIds || matchedSub.selectedPhotoIds || [];
+              const subPrev = (matchedSub.previouslySelectedPhotoIds?.length ? matchedSub.previouslySelectedPhotoIds : matchedSub.selectedPhotoIds) || [];
               if (subPrev.length > 0) {
                 const prevSet = new Set(subPrev);
                 setPreviouslySelectedPhotoIds(prevSet);
@@ -401,7 +373,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               setShowSubTokenSelector(true);
             }
           } else {
-            const prev = found.previouslySelectedPhotoIds || found.selectedPhotoIds || [];
+            const prev = (found.previouslySelectedPhotoIds?.length ? found.previouslySelectedPhotoIds : found.selectedPhotoIds) || [];
             if (prev.length > 0) {
               const prevSet = new Set(prev);
               setPreviouslySelectedPhotoIds(prevSet);
@@ -410,33 +382,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           }
         }
 
-        // ── Process WA number (profile sudah di-fetch paralel) ──
-        try {
-          let wa = "";
-          if (profileSnap.exists() && profileSnap.data().waNumber) {
-            wa = profileSnap.data().waNumber;
-          }
-          // Fallback: ambil dari koleksi admins hanya jika profile belum ada WA
-          if (!wa) {
-            const adminsSnap = await getDocs(collection(db, "admins"));
-            let anyAdminWa = "";
-            adminsSnap.forEach(d => {
-              const adminData = d.data();
-              if (!adminData.waNumber) return;
-              if (adminData.username === found.createdBy || adminData.username === found.assignedAdmin) {
-                wa = adminData.waNumber;
-              }
-              if (!anyAdminWa) anyAdminWa = adminData.waNumber;
-            });
-            if (!wa) wa = anyAdminWa;
-          }
-          if (wa) {
-            const cleanNumber = wa.replace(/\D/g, '').replace(/^0/, '62');
-            const message = `Halo Admin, saya ${found.clientName}. Saya ingin mengkonfirmasi pembayaran untuk tagihan foto saya (ID: ${found.id}). Berikut saya lampirkan screenshot bukti transfernya.`;
-            setStudioWaUrl(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`);
-          }
-        } catch (e) {
-          console.warn("Failed to prefetch WA number", e);
+        // ── Nomor WA studio untuk konfirmasi transfer (ditentukan server) ──
+        if (initData.studioWa) {
+          const message = `Halo Admin, saya ${found.clientName}. Saya ingin mengkonfirmasi pembayaran untuk tagihan foto saya (ID: ${found.id}). Berikut saya lampirkan screenshot bukti transfernya.`;
+          setStudioWaUrl(waLink(initData.studioWa, message));
         }
 
         // ── KUNCI GALERI: kunci galeri jika status proyek/subToken sudah 'Selesai' atau 'File Terkirim' (dan tidak sedang dibuka kembali) ──
@@ -454,15 +403,16 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           return;
         }
 
-        // ── Load photos dari Drive ──
-        const targetFolderId = 
-          extractGDriveFolderId(found.gdriveFolderId) ||
-          extractGDriveFolderId(found.gdriveLinkHighRes) ||
-          extractGDriveFolderId(found.gdriveLinkWatermark);
+        // ── Pulihkan draf pilihan foto yang belum dikonfirmasi (jika ada) ──
+        try {
+          const draft = JSON.parse(localStorage.getItem(`zeey_sel_${found.id}_${matchedSub?.id || 'main'}`) || 'null');
+          if (Array.isArray(draft) && draft.length > 0) setSelectedPhotos(new Set<string>(draft));
+        } catch { /* abaikan draf rusak */ }
 
-        if (targetFolderId) {
+        // ── Load photos dari Drive (folder di-resolve server dari projectId) ──
+        if (found.hasDriveFolder) {
           try {
-            const res = await fetch(`/api/drive/list-photos?folderId=${encodeURIComponent(targetFolderId)}`);
+            const res = await fetch(`/api/drive/list-photos?projectId=${encodeURIComponent(found.id)}`);
             const data = await res.json();
             if (res.ok && data.success) {
               setPhotos(data.photos || []);
@@ -550,33 +500,70 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     setSelectedPhotos(newSet);
   };
 
+  // ── Draf pilihan foto disimpan di perangkat agar tidak hilang bila halaman tertutup sebelum konfirmasi ──
+  const draftKey = project ? `zeey_sel_${project.id}_${activeSubToken?.id || 'main'}` : null;
+  useEffect(() => {
+    if (!draftKey || isLoading) return;
+    try {
+      if (showSuccess) localStorage.removeItem(draftKey);
+      else localStorage.setItem(draftKey, JSON.stringify(Array.from(selectedPhotos)));
+    } catch { /* penyimpanan peramban tidak tersedia */ }
+  }, [draftKey, selectedPhotos, showSuccess, isLoading]);
+
   const activeMaxPhotos = activeSubToken ? activeSubToken.maxPhotos : (project ? project.maxPhotos : 0);
 
-  const extraPhotoItem = priceList.find(item => item.id === "extra_photo");
-  const activeExtraPhotoPrice = extraPhotoItem ? extraPhotoItem.price : 50000;
-  
-  const extraPhotosCount = project ? Math.max(0, selectedPhotos.size - activeMaxPhotos) : 0;
-  const extraPhotosCost = extraPhotosCount * activeExtraPhotoPrice;
-
-  const addonsCost = Object.entries(selectedAddons).reduce((acc, [id, qty]) => {
-    const item = priceList.find(p => p.id === id);
-    if (item && item.scheme !== 'sudah bayar') return acc + (item.price * qty);
-    return acc;
-  }, 0);
-
-  const totalExtraCost = extraPhotosCost + addonsCost;
+  // Perhitungan tagihan memakai modul yang sama dengan server (lib/billing.ts);
+  // nominal yang benar-benar ditagihkan tetap dihitung ulang di server.
+  const { extraPhotosCount, extraPhotoPrice: activeExtraPhotoPrice, extraPhotosCost, totalExtraCost, grandTotal } = calculateBill({
+    packagePrice: project?.packagePrice,
+    dpAmount: project?.dpAmount,
+    maxPhotos: activeMaxPhotos,
+    selectedCount: project ? selectedPhotos.size : 0,
+    addons: selectedAddons,
+    priceList,
+  });
   const basePackagePrice = project?.packagePrice || 0;
   const dpAmount = project?.dpAmount || 0;
-  
-  // Tagihan tidak boleh minus
-  const grandTotal = Math.max(0, basePackagePrice + totalExtraCost - dpAmount);
+
+  // Detik berjalan untuk hitung mundur masa berlaku QRIS
+  useEffect(() => {
+    if (!qrisPayment || !showInvoice) return;
+    const id = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [qrisPayment, showInvoice]);
+
+  // ID pesanan aktif disimpan di ref agar callback Snap tidak membaca nilai state yang basi
+  const orderIdRef = useRef<string | null>(null);
+
+  /** Simpan pilihan foto & layanan tambahan ke server (tanpa mengunci galeri). */
+  const saveSelectionOnServer = async (proofPending = false) => {
+    if (!project) return false;
+    const res = await fetch('/api/client/selection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: project.id,
+        token: activeSubToken?.id,
+        selectedPhotoIds: Array.from(selectedPhotos),
+        selectedAddons,
+        proofPending,
+      }),
+    });
+    return res.ok;
+  };
 
   const handleConfirm = async () => {
     if (!project) return;
     
     if (grandTotal === 0) {
-      updateProjectStatusToSelesai();
-      setShowSuccess(true);
+      if (await updateProjectStatusToSelesai()) setShowSuccess(true);
+      return;
+    }
+
+    // Metode utama: QRIS langsung ke QR DANA Bisnis studio
+    if (qrisSetup.enabled) {
+      setShowInvoice(true);
+      await startQrisPayment();
       return;
     }
 
@@ -588,20 +575,69 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Simpan pilihan, lalu minta server membuat QRIS dinamis bernominal pas + kode unik. */
+  const startQrisPayment = async () => {
+    if (!project) return;
+    setIsPaymentLoading(true);
+    setQrisError(null);
+    setPaymentStatus('pending');
+    try {
+      await saveSelectionOnServer(false);
+      const res = await fetch('/api/payment/qris', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, token: activeSubToken?.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+      setQrisPayment(data.payment);
+      orderIdRef.current = data.payment.orderId;
+      setOrderId(data.payment.orderId);
+    } catch (err) {
+      setQrisError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsPaymentLoading(false);
+    }
+  };
+
+  /** Unduh QR sebagai PNG (untuk klien yang membuka galeri dari HP). */
+  const downloadQrisImage = () => {
+    const svg = document.getElementById('qris-svg');
+    if (!svg || !qrisPayment) return;
+    const xml = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const size = 720, pad = 48, textH = 90;
+      const canvas = document.createElement('canvas');
+      canvas.width = size + pad * 2;
+      canvas.height = size + pad * 2 + textH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, pad, pad, size, size);
+      ctx.fillStyle = '#111111';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 40px sans-serif';
+      ctx.fillText(`Rp ${qrisPayment.amount.toLocaleString('id-ID')}`, canvas.width / 2, size + pad + 50);
+      ctx.font = '24px sans-serif';
+      ctx.fillText(qrisPayment.merchantName || 'QRIS', canvas.width / 2, size + pad + 85);
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `QRIS-${qrisPayment.amount}.png`;
+      a.click();
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+  };
+
   const generateQris = async () => {
     if (!project) return;
     setIsPaymentLoading(true);
-    const newOrderId = `INV-${project.id}-${Date.now()}`;
-    setOrderId(newOrderId);
     setPaymentStatus('pending');
     
-    // Simpan pilihan foto ke Firestore lebih awal agar tidak hilang
+    // Simpan pilihan foto ke server lebih awal agar tidak hilang (nominal dihitung server dari data ini)
     try {
-      await updateDoc(doc(db, 'projects', project.id), {
-        selectedPhotoIds: Array.from(selectedPhotos),
-        extraRevenue: totalExtraCost,
-        selectedAddons: selectedAddons,
-      });
+      await saveSelectionOnServer(false);
     } catch(e) {
       console.error('Gagal menyimpan foto terpilih sementara:', e);
     }
@@ -610,17 +646,16 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       const res = await fetch('/api/payment/create-qris', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: newOrderId,
-          grossAmount: grandTotal,
-          clientName: project.clientName,
-          waNumber: project.waNumber
-        })
+        body: JSON.stringify({ projectId: project.id, token: activeSubToken?.id })
       });
       const data = await res.json();
       
       if (data.success) {
         setMidtransReviewNotice(null);
+        if (data.orderId) {
+          orderIdRef.current = data.orderId;
+          setOrderId(data.orderId);
+        }
         if (data.mode === 'midtrans-snap' && data.snapToken) {
            setSnapToken(data.snapToken);
            setSnapConfig({ clientKey: data.clientKey, isProduction: data.isProduction });
@@ -676,9 +711,10 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       },
       onClose: async function () {
         console.log('Payment popup closed');
-        if (orderId) {
+        const currentOrderId = orderIdRef.current || orderId;
+        if (currentOrderId) {
           try {
-            const res = await fetch(`/api/payment/status?orderId=${orderId}&isMock=${isMockPayment}`);
+            const res = await fetch(`/api/payment/status?orderId=${currentOrderId}&isMock=${isMockPayment}`);
             const data = await res.json();
             if (data.success && (data.transaction_status === 'settlement' || data.transaction_status === 'capture' || data.transaction_status === 'PAID')) {
               setPaymentStatus('settlement');
@@ -706,12 +742,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       paymentProofStatus: 'pending'
     });
 
-    updateDoc(doc(db, 'projects', project.id), {
-      paymentProofStatus: 'pending',
-      extraRevenue: totalExtraCost,
-      selectedAddons: selectedAddons,
-      selectedPhotoIds: Array.from(selectedPhotos)
-    }).catch(err => {
+    saveSelectionOnServer(true).catch(err => {
       console.error("Gagal update status manual:", err);
     });
   };
@@ -744,27 +775,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
 
-  useEffect(() => {
-    if (!project) return;
-    
-    const unsubscribe = onSnapshot(doc(db, "projects", project.id), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.status === 'File Terkirim' || data.status === 'Selesai') {
-          setPaymentStatus('settlement');
-          setShowInvoice(false);
-          setShowSuccess(true);
-        }
-      }
-    });
-    
-    return () => unsubscribe();
-  }, [project, showInvoice, paymentStatus]);
-
-  const handlePaymentSuccess = () => {
-    updateProjectStatusToSelesai();
+  const handlePaymentSuccess = async () => {
     setShowInvoice(false);
-    setShowSuccess(true);
+    if (await updateProjectStatusToSelesai()) {
+      setShowSuccess(true);
+    }
+    // Bila server belum melihat pelunasan, pemantauan status akan mencoba lagi otomatis.
   };
 
   const updateAddonQty = (id: string, delta: number) => {
@@ -781,97 +797,85 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     });
   };
 
-  const updateProjectStatusToSelesai = async () => {
-    if (!project) return;
+  /** Minta server mengunci pilihan foto; server memverifikasi tagihan/pembayaran terlebih dulu. */
+  const updateProjectStatusToSelesai = async (): Promise<boolean> => {
+    if (!project) return false;
     const selectedIds = Array.from(selectedPhotos);
     try {
-      if (project.subTokens && project.subTokens.length > 0 && activeSubToken) {
-        const updatedSubTokens = project.subTokens.map(st => {
-          if (st.id === activeSubToken.id) {
-            return {
-              ...st,
-              selectedPhotoIds: selectedIds,
-              previouslySelectedPhotoIds: selectedIds,
-              status: 'Selesai' as const,
-              completedAt: new Date().toISOString()
-            };
-          }
-          return st;
-        });
-
-        const combinedSelected = new Set<string>();
-        updatedSubTokens.forEach(st => {
-          (st.selectedPhotoIds || []).forEach(id => combinedSelected.add(id));
-        });
-
-        const isAllSubTokensDone = updatedSubTokens.every(
-          st => st.status === 'Selesai' || (st.selectedPhotoIds && st.selectedPhotoIds.length >= st.maxPhotos)
-        );
-
-        const updateData: any = {
-          subTokens: updatedSubTokens,
-          selectedPhotoIds: Array.from(combinedSelected),
-          previouslySelectedPhotoIds: Array.from(combinedSelected),
-          extraRevenue: totalExtraCost,
-          selectedAddons: selectedAddons,
-          isReopened: false,
-        };
-
-        if (isAllSubTokensDone) {
-          updateData.status = 'Selesai';
-          updateData.completedAt = new Date().toISOString();
-        }
-
-        await updateDoc(doc(db, 'projects', project.id), updateData);
-        setProject({ ...project, ...updateData });
-        setActiveSubToken({ ...activeSubToken, selectedPhotoIds: selectedIds, previouslySelectedPhotoIds: selectedIds, status: 'Selesai' });
-      } else {
-        const updateData: any = {
-          status: 'Selesai',
-          extraRevenue: totalExtraCost,
-          selectedAddons: selectedAddons,
+      const res = await fetch('/api/client/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          token: activeSubToken?.id,
           selectedPhotoIds: selectedIds,
-          previouslySelectedPhotoIds: selectedIds,
-          isReopened: false,
-          completedAt: new Date().toISOString(),
-        };
-        await updateDoc(doc(db, 'projects', project.id), updateData);
-        setProject({ ...project, ...updateData });
+          selectedAddons,
+          orderId: orderIdRef.current || orderId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.warn('Finalisasi ditolak server:', data.error);
+        return false;
       }
+      const now = new Date().toISOString();
+      if (activeSubToken) {
+        setActiveSubToken({ ...activeSubToken, selectedPhotoIds: selectedIds, previouslySelectedPhotoIds: selectedIds, status: 'Selesai' });
+        setProject(prev => prev ? { ...prev, selectedAddons, isReopened: false } : prev);
+      } else if (!data.alreadyFinal) {
+        setProject(prev => prev ? { ...prev, status: 'Selesai', selectedPhotoIds: selectedIds, previouslySelectedPhotoIds: selectedIds, selectedAddons, isReopened: false, completedAt: now } : prev);
+      }
+      return true;
     } catch (e) {
       console.error(e);
+      return false;
     }
-
-    // Update fallback localStorage
-    const savedProjects = JSON.parse(localStorage.getItem('zeey_projects') || '[]');
-    const updatedProjects = savedProjects.map((p: Project) => {
-      if (p.id === project.id) {
-        return {
-          ...p,
-          status: 'Selesai',
-          extraRevenue: totalExtraCost,
-          selectedAddons: selectedAddons,
-          selectedPhotoIds: selectedIds,
-          completedAt: new Date().toISOString(),
-        };
-      }
-      return p;
-    });
-    localStorage.setItem('zeey_projects', JSON.stringify(updatedProjects));
   };
+
+  // Pemantauan status dari server (pengganti listener Firestore real-time):
+  // mendeteksi pelunasan via webhook atau persetujuan transfer manual oleh admin.
+  const isWaitingForPayment = !!project && !showSuccess &&
+    (showInvoice || paymentStatus === 'pending' || project.paymentProofStatus === 'pending');
+  useEffect(() => {
+    if (!project || !isWaitingForPayment) return;
+    const projectId = project.id;
+    const intervalId = setInterval(async () => {
+      try {
+        // QRIS Midtrans: minta server memeriksa status transaksi (cadangan bila notifikasi tertunda)
+        if (qrisPaymentRef.current?.autoVerify) {
+          await fetch(`/api/payment/qris?projectId=${encodeURIComponent(projectId)}`).catch(() => null);
+        }
+        const res = await fetch(`/api/client/project?id=${encodeURIComponent(projectId)}`);
+        if (!res.ok) return;
+        const { project: latest } = await res.json();
+        if (!latest) return;
+        if (latest.status === 'File Terkirim' || latest.status === 'Selesai') {
+          await updateProjectStatusToSelesai(); // simpan pilihan final (idempoten di server)
+          setPaymentStatus('settlement');
+          setShowInvoice(false);
+          setShowSuccess(true);
+        } else if (latest.paymentProofStatus !== project.paymentProofStatus) {
+          setProject(prev => (prev ? { ...prev, paymentProofStatus: latest.paymentProofStatus } : prev));
+        }
+      } catch (e) {
+        console.warn('Gagal memeriksa status proyek:', e);
+      }
+    }, 5000);
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.paymentProofStatus, isWaitingForPayment]);
 
   const handleEditorRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
     setIsSubmittingEditor(true);
     try {
-      await addDoc(collection(db, "editor_requests"), {
-        projectId: project.id,
-        clientName: project.clientName,
-        notes: editorNotes,
-        status: "Pending",
-        createdAt: new Date().toISOString()
+      const res = await fetch('/api/client/editor-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: project.id, notes: editorNotes }),
       });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Gagal');
       // Automatically add Jasa Editor to selected addons for billing
       updateAddonQty("editor_request", 1);
       
@@ -898,9 +902,11 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     // 1. Ambil selectedPhotoIds terbaru langsung dari Firestore
     let confirmedIds: string[] = [];
     try {
-      const docSnap = await getDoc(doc(db, 'projects', project.id));
-      if (docSnap.exists()) {
-        confirmedIds = docSnap.data().selectedPhotoIds || [];
+      const res = await fetch(`/api/client/project?id=${encodeURIComponent(project.id)}`);
+      const { project: latest } = await res.json();
+      if (latest) {
+        const sub = activeSubToken ? (latest.subTokens || []).find((st: SubToken) => st.id === activeSubToken.id) : null;
+        confirmedIds = (sub?.selectedPhotoIds?.length ? sub.selectedPhotoIds : latest.selectedPhotoIds) || [];
       }
     } catch (e) {
       console.error('Gagal fetch selectedPhotoIds dari Firestore:', e);
@@ -921,14 +927,9 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       name: `foto_${i + 1}.jpg`,
     }));
 
-    const downloadFolderId = 
-      extractGDriveFolderId(project.gdriveFolderId) ||
-      extractGDriveFolderId(project.gdriveLinkHighRes) ||
-      extractGDriveFolderId(project.gdriveLinkWatermark);
-
-    if (downloadFolderId) {
+    {
       try {
-        const res = await fetch(`/api/drive/list-photos?folderId=${encodeURIComponent(downloadFolderId)}`);
+        const res = await fetch(`/api/drive/list-photos?projectId=${encodeURIComponent(project.id)}`);
         const data = await res.json();
         if (res.ok && data.success && data.photos) {
           // Buat set ID foto yang benar-benar ada di folder Drive klien
@@ -992,6 +993,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         body: JSON.stringify({
           photos: photosToDownload,
           clientName: project.clientName,
+          projectId: project.id,
         }),
       });
 
@@ -1018,7 +1020,8 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
    * tanpa perlu menunggu proses apapun di sisi klien.
    */
   const downloadSinglePhoto = (photo: { id: string; name: string }) => {
-    const url = `/api/drive/download?id=${photo.id}&name=${encodeURIComponent(photo.name)}`;
+    if (!project) return;
+    const url = `/api/drive/download?projectId=${encodeURIComponent(project.id)}&id=${photo.id}&name=${encodeURIComponent(photo.name)}`;
     const a = document.createElement('a');
     a.href = url;
     a.download = photo.name;
@@ -1039,7 +1042,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     for (let i = 0; i < photosToDownload.length; i++) {
       setDlQueue({ current: i + 1, total: photosToDownload.length });
       const photo = photosToDownload[i];
-      const url = `/api/drive/download?id=${photo.id}&name=${encodeURIComponent(photo.name)}`;
+      const url = `/api/drive/download?projectId=${encodeURIComponent(project.id)}&id=${photo.id}&name=${encodeURIComponent(photo.name)}`;
       const a = document.createElement('a');
       a.href = url;
       a.download = photo.name;
@@ -1074,10 +1077,6 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           projectId: project.id,
           clientName: project.clientName,
           photoIds: photosToDownload.map(p => p.id),
-          sourceFolderId: 
-            extractGDriveFolderId(project.gdriveFolderId) ||
-            extractGDriveFolderId(project.gdriveLinkHighRes) ||
-            extractGDriveFolderId(project.gdriveLinkWatermark)
         })
       });
       
@@ -1538,6 +1537,73 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                 </div>
               </div>
 
+              {/* ── QRIS langsung ke QR DANA Bisnis studio (metode utama) ── */}
+              {qrisSetup.enabled && project.paymentProofStatus !== 'pending' && (
+                <div className="w-full border-2 border-accent/40 bg-accent/5 rounded-2xl p-5 mb-6 font-sans text-center">
+                  <h4 className="font-semibold text-base text-foreground">{t.qrisTitle}</h4>
+                  <p className="text-[11px] text-foreground/60 mb-4">{t.qrisDesc(qrisPayment?.merchantName || qrisSetup.merchantName)}</p>
+
+                  {isPaymentLoading && !qrisPayment ? (
+                    <div className="py-10 flex flex-col items-center gap-3 text-xs text-foreground/60">
+                      <div className="w-8 h-8 border-4 border-accent/30 border-t-accent rounded-full animate-spin" />
+                      {t.qrisLoading}
+                    </div>
+                  ) : qrisError ? (
+                    <div className="py-4 text-xs text-red-600">
+                      <p className="mb-3">{t.qrisFailed(qrisError)}</p>
+                      <button type="button" onClick={startQrisPayment} className="px-4 py-2 bg-accent text-white rounded-xl font-medium cursor-pointer">{t.qrisRefresh}</button>
+                    </div>
+                  ) : qrisPayment ? (() => {
+                    const minutesLeft = Math.max(0, Math.ceil((new Date(qrisPayment.expiresAt).getTime() - nowTick) / 60000));
+                    const expired = minutesLeft <= 0;
+                    return (
+                      <>
+                        <div className={`inline-block bg-white p-3 rounded-2xl shadow-sm ${expired ? 'opacity-30' : ''}`}>
+                          {qrisPayment.qrString ? (
+                            <QRCodeSVG id="qris-svg" value={qrisPayment.qrString} size={220} level="M" marginSize={1} />
+                          ) : qrisPayment.qrUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={qrisPayment.qrUrl} alt="QRIS" width={220} height={220} />
+                          ) : null}
+                        </div>
+                        {qrisPayment.checkoutUrl && (
+                          <a href={qrisPayment.checkoutUrl} target="_blank" rel="noopener noreferrer" className="block mt-2 text-xs text-accent underline">
+                            {t.qrisOpenCheckout}
+                          </a>
+                        )}
+                        <p className="text-[11px] text-foreground/60 mt-3">{t.qrisAmountLabel}</p>
+                        <p className="text-2xl font-bold text-accent font-mono tracking-wide">Rp {qrisPayment.amount.toLocaleString('id-ID')}</p>
+                        {qrisPayment.uniqueCode > 0 && (
+                          <p className="text-[11px] text-foreground/60 mt-1 px-4">{t.qrisUniqueCodeNote(qrisPayment.uniqueCode.toLocaleString('id-ID'))}</p>
+                        )}
+                        {expired ? (
+                          <div className="mt-3 text-xs">
+                            <p className="text-red-600 mb-2">{t.qrisExpired}</p>
+                            <button type="button" onClick={startQrisPayment} className="px-4 py-2 bg-accent text-white rounded-xl font-medium cursor-pointer">{t.qrisRefresh}</button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-foreground/50 mt-2">{t.qrisExpiresIn(minutesLeft)}</p>
+                        )}
+                        {qrisPayment.qrString ? (
+                          <button type="button" onClick={downloadQrisImage} className="mt-3 text-xs text-accent underline cursor-pointer">{t.qrisSaveImage}</button>
+                        ) : qrisPayment.qrUrl ? (
+                          <a href={qrisPayment.qrUrl} target="_blank" rel="noopener noreferrer" download className="mt-3 inline-block text-xs text-accent underline">{t.qrisSaveImage}</a>
+                        ) : null}
+                        <p className="text-[10px] text-foreground/50 mt-1 px-4">{t.qrisSaveHint}</p>
+                        {qrisPayment.autoVerify ? (
+                          <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-emerald-700 bg-emerald-500/10 rounded-xl px-3 py-2">
+                            <div className="w-3 h-3 border-2 border-emerald-500/40 border-t-emerald-600 rounded-full animate-spin" />
+                            {t.qrisWaitingAuto}
+                          </div>
+                        ) : (
+                          <p className="mt-4 text-[11px] text-foreground/70">{t.qrisManualHint}</p>
+                        )}
+                      </>
+                    );
+                  })() : null}
+                </div>
+              )}
+
               {/* Notice jika Midtrans sedang review */}
               {midtransReviewNotice && (
                 <div className="bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 p-4 rounded-2xl text-xs font-sans mb-6 flex items-start gap-3">
@@ -1592,9 +1658,11 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                         <p className="text-[11px] text-foreground/60">{t.manualTransferDesc}</p>
                       </div>
                     </div>
-                    <span className="text-[10px] uppercase font-bold bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
-                      {t.primaryActiveTag}
-                    </span>
+                    {!qrisSetup.enabled && (
+                      <span className="text-[10px] uppercase font-bold bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
+                        {t.primaryActiveTag}
+                      </span>
+                    )}
                   </div>
 
                   {manualBankInfo?.bankName || manualBankInfo?.accountNumber ? (
@@ -1653,6 +1721,15 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
                     >
                       {t.confirmViaWa}
                     </button>
+                  )}
+
+                  {/* Midtrans sebagai metode alternatif saat QRIS menjadi metode utama */}
+                  {qrisSetup.enabled && !snapToken && snapConfig?.clientKey && (
+                    <div className="mt-4 pt-3 border-t border-border/50 text-center">
+                      <button type="button" onClick={generateQris} className="text-xs text-blue-600 hover:text-blue-700 font-medium underline cursor-pointer">
+                        {t.payViaMidtransAlt}
+                      </button>
+                    </div>
                   )}
 
                   {/* Midtrans Snap Secondary Trigger (tetap ada jika token siap) */}

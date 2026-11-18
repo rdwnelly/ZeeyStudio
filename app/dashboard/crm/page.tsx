@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+import { normalizeWaNumber } from "@/lib/phone";
 
 type Project = {
   id: string;
@@ -27,6 +28,8 @@ type ClientData = {
   leadSource: string;
   socialMedia: string;
   originalWaNumber?: string;
+  // Semua variasi penulisan nomor (08…, 628…, +62…) milik klien ini
+  rawWaNumbers?: string[];
 };
 
 export default function CRMPage() {
@@ -48,14 +51,19 @@ export default function CRMPage() {
       
       snapshot.forEach(doc => {
         const data = doc.data() as Project;
-        const wa = data.waNumber || "Unknown";
-        
+        const raw = data.waNumber || "";
+        // Kunci identitas = nomor ternormalisasi, sehingga 0812… dan 62812… adalah klien yang sama
+        const wa = normalizeWaNumber(raw) || "Unknown";
+
         if (clientMap.has(wa)) {
           const existing = clientMap.get(wa)!;
           existing.totalOrders += 1;
+          if (raw && !existing.rawWaNumbers!.includes(raw)) existing.rawWaNumbers!.push(raw);
           if (new Date(data.createdAt) > new Date(existing.lastOrderDate)) {
             existing.lastOrderDate = data.createdAt;
             existing.name = data.clientName;
+            existing.waNumber = raw || existing.waNumber;
+            existing.originalWaNumber = raw || existing.originalWaNumber;
             if (data.clientEmail) existing.email = data.clientEmail;
             if (data.clientType) existing.clientType = data.clientType;
             if (data.leadSource) existing.leadSource = data.leadSource;
@@ -63,8 +71,9 @@ export default function CRMPage() {
           }
         } else {
           clientMap.set(wa, {
-            waNumber: wa,
-            originalWaNumber: wa,
+            waNumber: raw || wa,
+            originalWaNumber: raw || wa,
+            rawWaNumbers: raw ? [raw] : [],
             name: data.clientName || "Unknown",
             email: data.clientEmail || "-",
             totalOrders: 1,
@@ -75,7 +84,7 @@ export default function CRMPage() {
           });
         }
       });
-      
+
       const clientsArray = Array.from(clientMap.values());
       clientsArray.sort((a, b) => new Date(b.lastOrderDate).getTime() - new Date(a.lastOrderDate).getTime());
       
@@ -89,7 +98,10 @@ export default function CRMPage() {
 
   useEffect(() => {
     const role = localStorage.getItem("zeey_auth_role");
-    if (role !== "owner") {
+    let accesses: string[] = [];
+    try { accesses = JSON.parse(localStorage.getItem("zeey_auth_access") || "[]"); } catch {}
+    // Owner, atau admin yang diberi hak akses modul CRM di Pengaturan
+    if (role !== "owner" && !accesses.includes("crm")) {
       router.push("/dashboard");
       return;
     }
@@ -103,10 +115,10 @@ export default function CRMPage() {
     
     setIsSubmitting(true);
     try {
-      const q = query(collection(db, "projects"), where("waNumber", "==", editingClient.originalWaNumber));
-      const snap = await getDocs(q);
-      
-      const promises = snap.docs.map(d => updateDoc(doc(db, "projects", d.id), {
+      const variants = editingClient.rawWaNumbers?.length ? editingClient.rawWaNumbers : [editingClient.originalWaNumber];
+      const docs = await getProjectDocsByWa(variants);
+
+      const promises = docs.map(d => updateDoc(doc(db, "projects", d.id), {
         clientName: editingClient.name,
         waNumber: editingClient.waNumber,
         clientEmail: editingClient.email,
@@ -131,19 +143,30 @@ export default function CRMPage() {
     }
   };
 
-  const handleDelete = async (waNumber: string, name: string, total: number) => {
+  // Ambil semua proyek milik klien untuk seluruh variasi nomor WA (kueri "in" maks. 30 nilai)
+  const getProjectDocsByWa = async (variants: string[]) => {
+    const unique = Array.from(new Set(variants.filter(Boolean)));
+    const results = [];
+    for (let i = 0; i < unique.length; i += 30) {
+      const snap = await getDocs(query(collection(db, "projects"), where("waNumber", "in", unique.slice(i, i + 30))));
+      results.push(...snap.docs);
+    }
+    return results;
+  };
+
+  const handleDelete = async (client: ClientData) => {
+    const { name, totalOrders: total } = client;
+    const variants = client.rawWaNumbers?.length ? client.rawWaNumbers : [client.waNumber];
     if (confirm(`Yakin ingin MENGHAPUS klien "${name}" beserta seluruh ${total} riwayat pesanannya?\n\nTindakan ini permanen dan tidak dapat dibatalkan!`)) {
       try {
-        const q = query(collection(db, "projects"), where("waNumber", "==", waNumber));
-        const snap = await getDocs(q);
-        
-        const promises = snap.docs.map(d => deleteDoc(doc(db, "projects", d.id)));
+        const docs = await getProjectDocsByWa(variants);
+        const promises = docs.map(d => deleteDoc(doc(db, "projects", d.id)));
         await Promise.all(promises);
 
         // Clear matching projects from localStorage
         try {
           const savedProjects = JSON.parse(localStorage.getItem("zeey_projects") || "[]");
-          const updatedLocal = savedProjects.filter((p: any) => p.waNumber !== waNumber);
+          const updatedLocal = savedProjects.filter((p: any) => !variants.includes(p.waNumber));
           localStorage.setItem("zeey_projects", JSON.stringify(updatedLocal));
         } catch (e) {
           console.warn("Notice updating local storage on delete CRM:", e);
@@ -252,10 +275,7 @@ export default function CRMPage() {
                   </tr>
                 ) : (
                   filteredClients.map((client, idx) => {
-                    let cleanNumber = client.waNumber.replace(/[^0-9]/g, "");
-                    if (cleanNumber.startsWith("0")) {
-                      cleanNumber = "62" + cleanNumber.substring(1);
-                    }
+                    const cleanNumber = normalizeWaNumber(client.waNumber);
                     
                     return (
                       <tr key={idx} className="hover:bg-surface-alt/30 transition-colors group">
@@ -307,7 +327,7 @@ export default function CRMPage() {
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
                             <button 
-                              onClick={() => handleDelete(client.waNumber, client.name, client.totalOrders)}
+                              onClick={() => handleDelete(client)}
                               className="inline-flex items-center px-3 py-1.5 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white rounded-lg text-xs font-medium transition-colors"
                               title="Hapus Klien & Pesanan"
                             >

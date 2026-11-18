@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
 import { db } from "@/lib/firebase";
+import { normalizeWaNumber } from "@/lib/phone";
 import { collection, getDocs, updateDoc, doc, query, orderBy } from "firebase/firestore";
 import Link from "next/link";
 
@@ -76,10 +77,7 @@ export default function EditorDashboard() {
         if (project && project.waNumber) {
           const message = `Halo ${project.clientName},\n\nTim Editor kami telah selesai memproses foto pilihan Anda!\nSilakan cek hasil editnya di galeri Anda:\n${window.location.origin}/client/${projectId}\n\nTerima kasih,\nZeey Studio`;
           
-          let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
-          if (cleanNumber.startsWith("0")) {
-              cleanNumber = "62" + cleanNumber.substring(1);
-          }
+          const cleanNumber = normalizeWaNumber(project.waNumber);
           const waUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
           window.open(waUrl, '_blank');
         }
@@ -112,10 +110,7 @@ export default function EditorDashboard() {
         }
 
         if (project.waNumber) {
-            let cleanNumber = project.waNumber.replace(/[^0-9]/g, "");
-            if (cleanNumber.startsWith("0")) {
-                cleanNumber = "62" + cleanNumber.substring(1);
-            }
+            const cleanNumber = normalizeWaNumber(project.waNumber);
             
             const message = `Halo ${project.clientName},\n\nBerikut adalah link Google Drive untuk foto-foto yang sudah selesai diedit:\n\n${link}\n\nTerima kasih,\nZeey Studio`;
             const waUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;

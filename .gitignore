@@ -47,3 +47,8 @@ lib/*.json
 *.zip
 
 
+
+# Firebase Emulator
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

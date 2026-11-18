@@ -22,52 +22,60 @@ export default function LoginPage() {
       // 1. Check for Owner using Firebase Auth (Email/Password)
       if (username.includes("@")) {
         const { auth } = await import("@/lib/firebase");
-        const { signInWithEmailAndPassword } = await import("firebase/auth");
+        const { signInWithEmailAndPassword, signOut } = await import("firebase/auth");
         try {
           await signInWithEmailAndPassword(auth, username, password);
-          localStorage.setItem("zeey_auth_role", "owner");
-          localStorage.setItem("zeey_auth_user", "Owner");
-          const { logActivity } = await import("@/lib/audit");
-          await logActivity("Login", "Owner berhasil masuk via Firebase Auth.");
-          router.push("/dashboard");
-          return;
-        } catch (authErr: any) {
+        } catch {
           setError("Email atau password salah.");
           setIsLoading(false);
           return;
         }
+        // Minta server memberi klaim peran "owner" (hanya untuk email di OWNER_EMAILS)
+        const user = auth.currentUser!;
+        const claimRes = await fetch("/api/auth/owner-claim", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+        });
+        const claimData = await claimRes.json().catch(() => ({}));
+        if (!claimRes.ok || !claimData.success) {
+          await signOut(auth);
+          setError(claimData.error || "Akun ini tidak terdaftar sebagai Owner.");
+          setIsLoading(false);
+          return;
+        }
+        if (claimData.refresh) await user.getIdToken(true); // muat ulang token dengan klaim baru
+
+        localStorage.setItem("zeey_auth_role", "owner");
+        localStorage.setItem("zeey_auth_user", "Owner");
+        const { logActivity } = await import("@/lib/audit");
+        await logActivity("Login", "Owner berhasil masuk via Firebase Auth.");
+        router.push("/dashboard");
+        return;
       }
 
-      // 2. Check Firestore for Admins
-      const { collection, getDocs, query, where } = await import("firebase/firestore");
-      const { db } = await import("@/lib/firebase");
+      // 2. Admin: diverifikasi di server (kata sandi di-hash, tidak dicocokkan dari browser)
+      const res = await fetch("/api/auth/admin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
 
-      const q = query(
-        collection(db, "admins"),
-        where("username", "==", username),
-        where("password", "==", password)
-      );
-
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        const adminDoc = querySnapshot.docs[0].data();
-        const authRole = adminDoc.role || "admin";
-
-        let accesses = adminDoc.accesses;
-        if (!accesses) {
-          accesses = authRole === "admin_editor" ? ["editor", "portfolio"] : ["bookings", "portfolio"];
-        }
+      if (res.ok && data.success) {
+        // Masuk ke Firebase Auth dengan custom token berklaim peran & hak akses admin
+        const { auth } = await import("@/lib/firebase");
+        const { signInWithCustomToken } = await import("firebase/auth");
+        await signInWithCustomToken(auth, data.customToken);
 
         localStorage.setItem("zeey_auth_role", "admin");
-        localStorage.setItem("zeey_auth_access", JSON.stringify(accesses));
-        localStorage.setItem("zeey_auth_user", adminDoc.name);
+        localStorage.setItem("zeey_auth_access", JSON.stringify(data.accesses || []));
+        localStorage.setItem("zeey_auth_user", data.name);
 
         const { logActivity } = await import("@/lib/audit");
-        await logActivity("Login", `Admin ${adminDoc.name} berhasil masuk.`);
+        await logActivity("Login", `Admin ${data.name} berhasil masuk.`);
         router.push("/dashboard");
       } else {
-        setError("Username atau password salah.");
+        setError(data.error || "Username atau password salah.");
         setIsLoading(false);
       }
     } catch (err) {

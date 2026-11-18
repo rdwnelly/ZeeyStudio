@@ -2,20 +2,31 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPhotosInFolder } from '@/lib/drive';
 import { extractGDriveFolderId } from '@/lib/drive-utils';
+import { loadProject } from '@/lib/client-project';
+import { verifyStaff } from '@/lib/firebase-admin';
+
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    let rawFolderId = searchParams.get('folderId') || searchParams.get('folderid') || searchParams.get('id');
+    const projectId = searchParams.get('projectId') || '';
+    let cleanFolderId: string | null = null;
 
-    // Fallback if searchParams missed it
-    if (!rawFolderId && request.url.includes('?')) {
-      const queryStr = request.url.split('?')[1] || '';
-      const parsed = new URLSearchParams(queryStr);
-      rawFolderId = parsed.get('folderId') || parsed.get('folderid') || parsed.get('id');
+    if (projectId) {
+      // Galeri klien: folder di-resolve di server, ID/tautan Drive tidak pernah dikirim ke browser
+      const project = await loadProject(projectId);
+      cleanFolderId =
+        extractGDriveFolderId(project?.gdriveFolderId) ||
+        extractGDriveFolderId(project?.gdriveLinkHighRes) ||
+        extractGDriveFolderId(project?.gdriveLinkWatermark);
+    } else {
+      // Mode folderId langsung hanya untuk staf yang login
+      if (!(await verifyStaff(request))) {
+        return NextResponse.json({ error: 'Gunakan parameter projectId.' }, { status: 401 });
+      }
+      cleanFolderId = extractGDriveFolderId(searchParams.get('folderId') || undefined);
     }
-
-    const cleanFolderId = extractGDriveFolderId(rawFolderId || undefined);
 
     if (!cleanFolderId) {
       return NextResponse.json(
@@ -51,7 +62,8 @@ export async function GET(request: NextRequest) {
         thumbnailUrl: thumbUrl,
         previewUrl: previewUrl,
         fallbackUrl: `/api/drive/image?id=${photo.id}&sz=s300`,
-        fullUrl: `/api/drive/image?id=${photo.id}&sz=full`,
+        // Pratinjau besar (bukan berkas asli); berkas asli hanya lewat /api/drive/download setelah bayar
+        fullUrl: `/api/drive/image?id=${photo.id}&sz=s1000`,
       };
     });
 

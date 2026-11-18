@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getDriveService, makeFolderPublic } from '@/lib/drive';
+import { verifyStaff } from '@/lib/firebase-admin';
 import { Readable } from 'stream';
 
 export async function POST(request: Request) {
   try {
+    if (!(await verifyStaff(request))) {
+      return NextResponse.json({ error: 'Hanya staf yang login yang dapat melakukan ini.' }, { status: 401 });
+    }
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const folderId = formData.get('folderId') as string;

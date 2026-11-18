@@ -56,11 +56,14 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const navItems = role === "owner" ? ALL_MODULES : ALL_MODULES.filter(item => item.id === "dashboard" || userAccesses.includes(item.id));
 
-  const handleLogout = (e: React.MouseEvent) => {
+  const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
     localStorage.removeItem("zeey_auth_role");
     localStorage.removeItem("zeey_auth_access");
     localStorage.removeItem("zeey_auth_user");
+    // Akhiri sesi Firebase agar akses Firestore ikut tertutup
+    const [{ auth }, { signOut }] = await Promise.all([import("@/lib/firebase"), import("firebase/auth")]);
+    await signOut(auth).catch(() => {});
     router.push("/");
   };
 

@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 import { createSnapClient } from '@/lib/midtrans';
 
 /**
@@ -27,17 +26,16 @@ export async function GET(req: Request) {
     }
 
     // ── 2. Ambil data project dari Firestore ─────────────────────────────────────
-    const projectRef = doc(db, 'projects', projectId);
-    const projectSnap = await getDoc(projectRef);
+    const projectSnap = await adminDb().collection('projects').doc(projectId).get();
 
-    if (!projectSnap.exists()) {
+    if (!projectSnap.exists) {
       return NextResponse.json({ success: true, transaction_status: 'not_found' });
     }
 
-    const projectData = projectSnap.data();
+    const projectData = projectSnap.data() || {};
 
     // Jika project sudah Selesai (diupdate oleh webhook), langsung return PAID
-    if (projectData.status === 'Selesai') {
+    if (projectData.status === 'Selesai' || projectData.status === 'File Terkirim') {
       return NextResponse.json({ success: true, transaction_status: 'PAID' });
     }
 
@@ -67,7 +65,7 @@ export async function GET(req: Request) {
     // ── 4. Fallback: cek status Firestore ────────────────────────────────────────
     return NextResponse.json({
       success: true,
-      transaction_status: projectData.status === 'Selesai' ? 'PAID' : 'pending',
+      transaction_status: (projectData.status === 'Selesai' || projectData.status === 'File Terkirim') ? 'PAID' : 'pending',
     });
   } catch (error: any) {
     console.error('[payment-status] Error:', error);

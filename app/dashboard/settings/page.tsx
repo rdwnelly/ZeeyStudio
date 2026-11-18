@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 
 import { db } from "@/lib/firebase";
-import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
+import { authFetch } from "@/lib/auth-client";
+import { EnvVarRow, EnvHelp } from "@/components/EnvStatus";
+import { getQrisInfo } from "@/lib/qris";
+import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc, setDoc, deleteField } from "firebase/firestore";
 
 export type PriceItem = {
   id: string;
@@ -62,27 +65,109 @@ export default function SettingsPage() {
   const [isProfileSaved, setIsProfileSaved] = useState(false);
 
   // --- PEMBAYARAN STATE ---
+  // Hanya data rekening transfer manual (bukan rahasia). Kunci Midtrans ada di variabel lingkungan server.
   const [payment, setPayment] = useState({
-    // Midtrans Snap
-    midtrans_server_key: "",
-    midtrans_client_key: "",
-    midtrans_merchant_id: "",
-    midtrans_is_production: false,
-    qrisString: "",
-    // Transfer Manual
     bankName: "",
     accountNumber: "",
     accountName: "",
   });
   const [isPaymentSaved, setIsPaymentSaved] = useState(false);
 
-  // --- GOOGLE DRIVE STATE ---
-  const [gdrive, setGdrive] = useState({
-    client_email: "",
-    private_key: "",
-    service_account_json: "",
-  });
-  const [isGdriveSaved, setIsGdriveSaved] = useState(false);
+  // --- QRIS DANA BISNIS (QR statis merchant; bukan rahasia, disimpan di settings/payment) ---
+  const [qrisStatic, setQrisStatic] = useState("");
+  const [qrisDraft, setQrisDraft] = useState("");
+  const [qrisMsg, setQrisMsg] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const qrisDraftInfo = qrisDraft.trim() ? getQrisInfo(qrisDraft.trim()) : null;
+  const qrisSavedInfo = qrisStatic ? getQrisInfo(qrisStatic) : null;
+
+  /** Baca QR dari gambar yang diunggah (diproses di browser, tidak dikirim ke layanan lain). */
+  const handleQrisImage = async (file: File) => {
+    setQrisMsg(null);
+    try {
+      const jsQR = (await import("jsqr")).default;
+      const url = URL.createObjectURL(file);
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = url;
+      });
+      // Perkecil gambar besar agar decoding cepat
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const result = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+      if (!result?.data) throw new Error("QR tidak terbaca. Gunakan gambar QR yang jelas/tidak terpotong.");
+      setQrisDraft(result.data);
+    } catch (e) {
+      setQrisMsg({ type: "error", text: e instanceof Error ? e.message : "Gagal membaca gambar QR" });
+    }
+  };
+
+  const saveQris = async (value: string) => {
+    setQrisMsg(null);
+    if (value) {
+      const info = getQrisInfo(value);
+      if (!info.valid) {
+        setQrisMsg({ type: "error", text: info.error || "QRIS tidak valid" });
+        return;
+      }
+    }
+    try {
+      await setDoc(doc(db, "settings", "payment"), { qrisStatic: value }, { merge: true });
+      setQrisStatic(value);
+      setQrisDraft("");
+      setQrisMsg({ type: "ok", text: value ? "QRIS tersimpan. Klien kini membayar lewat QR ini." : "QRIS dihapus." });
+      const { logActivity } = await import("@/lib/audit");
+      await logActivity("Pengaturan Pembayaran", value ? "Memperbarui QRIS DANA Bisnis" : "Menghapus QRIS DANA Bisnis");
+      loadIntegrations();
+    } catch (e) {
+      setQrisMsg({ type: "error", text: "Gagal menyimpan: " + (e instanceof Error ? e.message : String(e)) });
+    }
+  };
+
+  // --- STATUS INTEGRASI (kunci di variabel lingkungan server) ---
+  type IntegrationStatus = {
+    midtrans: { configured: boolean; isProduction: boolean; clientKey: string; hasClientKey: boolean; merchantId: string };
+    drive: { configured: boolean; clientEmail: string };
+    qris: { configured: boolean; merchantName: string; merchantCity: string; nmid: string; autoVerify: boolean };
+    midtransQris: { enabled: boolean; acquirer: string };
+    webhooks: { cashify: boolean };
+    legacyInFirestore: { payment: string[]; gdrive: string[] };
+  };
+  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null);
+  const [isPurgingLegacy, setIsPurgingLegacy] = useState(false);
+  const loadIntegrations = async () => {
+    try {
+      const res = await authFetch("/api/staff/integrations");
+      if (res.ok) setIntegrations(await res.json());
+    } catch (e) {
+      console.error("Gagal memuat status integrasi", e);
+    }
+  };
+  const purgeLegacySecrets = async () => {
+    if (!confirm("Hapus kunci Midtrans, kredensial Google Drive, dan secret webhook lama dari database?\n\nPastikan nilainya sudah dipasang sebagai Environment Variables di Vercel. Data rekening transfer tidak dihapus.")) return;
+    setIsPurgingLegacy(true);
+    try {
+      const res = await authFetch("/api/staff/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "purge-legacy" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Gagal");
+      await loadIntegrations();
+      alert("Kunci lama berhasil dihapus dari database.");
+    } catch (e) {
+      alert("Gagal menghapus kunci lama: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setIsPurgingLegacy(false);
+    }
+  };
+
 
 
 
@@ -135,7 +220,18 @@ export default function SettingsPage() {
 
     // Load Profile
     const savedProfile = JSON.parse(localStorage.getItem("zeey_profile") || "null");
-    if (savedProfile) setProfile(savedProfile);
+    if (savedProfile) setProfile((prev) => ({ ...prev, ...savedProfile }));
+    // Sumber utama profil adalah Firestore (settings/profile)
+    getDoc(doc(db, "settings", "profile"))
+      .then((snap) => {
+        if (snap.exists()) {
+          const data = { ...snap.data() };
+          delete data.updatedAt;
+          setProfile((prev) => ({ ...prev, ...data }));
+          localStorage.setItem("zeey_profile", JSON.stringify({ ...(savedProfile || {}), ...data }));
+        }
+      })
+      .catch((e) => console.error("Error loading profile", e));
 
     // Load Payment from Firestore
     const loadPayment = async () => {
@@ -143,7 +239,9 @@ export default function SettingsPage() {
         const docRef = doc(db, "settings", "payment");
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setPayment((prev) => ({ ...prev, ...docSnap.data() }));
+          const d = docSnap.data();
+          setPayment({ bankName: d.bankName || "", accountNumber: d.accountNumber || "", accountName: d.accountName || "" });
+          setQrisStatic(d.qrisStatic || "");
         }
       } catch (e) {
         console.error("Error loading payment", e);
@@ -151,18 +249,7 @@ export default function SettingsPage() {
     };
     loadPayment();
 
-    const loadGdrive = async () => {
-      try {
-        const docRef = doc(db, "settings", "gdrive");
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setGdrive((prev) => ({ ...prev, ...docSnap.data() }));
-        }
-      } catch (e) {
-        console.error("Error loading gdrive settings", e);
-      }
-    };
-    loadGdrive();
+    loadIntegrations();
 
     // Load Admins
     loadAdmins();
@@ -259,60 +346,35 @@ export default function SettingsPage() {
   };
 
   // --- PROFIL HANDLERS ---
-  const saveProfile = (e: React.FormEvent) => {
+  const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Disimpan ke Firestore (dibaca galeri klien & perangkat lain) + cache lokal (invoice)
     localStorage.setItem("zeey_profile", JSON.stringify(profile));
-    setIsProfileSaved(true);
-    setTimeout(() => setIsProfileSaved(false), 3000);
+    try {
+      await setDoc(doc(db, "settings", "profile"), { ...profile, updatedAt: new Date().toISOString() }, { merge: true });
+      setIsProfileSaved(true);
+      setTimeout(() => setIsProfileSaved(false), 3000);
+      const { logActivity } = await import("@/lib/audit");
+      await logActivity("Pengaturan Profil", "Memperbarui profil studio");
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menyimpan profil ke database. Perubahan hanya tersimpan di perangkat ini.");
+    }
   };
 
   // --- PEMBAYARAN HANDLERS ---
   const savePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await setDoc(doc(db, "settings", "payment"), payment);
+      await setDoc(doc(db, "settings", "payment"), payment, { merge: true });
       setIsPaymentSaved(true);
       setTimeout(() => setIsPaymentSaved(false), 3000);
       
       const { logActivity } = await import("@/lib/audit");
-      await logActivity("Pengaturan Pembayaran", "Memperbarui konfigurasi metode pembayaran (Midtrans & Transfer Manual)");
+      await logActivity("Pengaturan Pembayaran", "Memperbarui data rekening transfer manual");
     } catch (e) {
       console.error(e);
       alert("Gagal menyimpan data pembayaran");
-    }
-  };
-
-  const saveGdrive = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      let client_email = gdrive.client_email.trim();
-      let private_key = gdrive.private_key.trim();
-      let service_account_json = gdrive.service_account_json.trim();
-
-      if (service_account_json) {
-        try {
-          const parsed = JSON.parse(service_account_json);
-          if (parsed.client_email) client_email = parsed.client_email;
-          if (parsed.private_key) private_key = parsed.private_key;
-        } catch (e) {}
-      }
-
-      await setDoc(doc(db, "settings", "gdrive"), {
-        client_email,
-        private_key,
-        service_account_json,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-
-      setIsGdriveSaved(true);
-      setTimeout(() => setIsGdriveSaved(false), 3000);
-
-      const { logActivity } = await import("@/lib/audit");
-      await logActivity("Pengaturan Google Drive", "Memperbarui kredensial Service Account Google Drive");
-      alert("Kredensial Google Drive berhasil disimpan ke Database!");
-    } catch (e: any) {
-      console.error(e);
-      alert("Gagal menyimpan data Google Drive: " + e.message);
     }
   };
 
@@ -399,17 +461,35 @@ export default function SettingsPage() {
       kpiTarget: parseInt(adminForm.kpiTarget.toString().replace(/[^0-9]/g, "")) || 0
     };
 
+    // Kata sandi di-hash di server; yang tersimpan hanya passwordHash + passwordSalt
+    const hashNewPassword = async (plain: string) => {
+      const res = await authFetch("/api/auth/hash-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: plain }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal memproses kata sandi");
+      return data as { passwordHash: string; passwordSalt: string };
+    };
+
     try {
       if (editingAdminId) {
         const updateData: any = { ...adminPayload };
         if (adminForm.password.trim() !== "") {
-          updateData.password = adminForm.password;
+          Object.assign(updateData, await hashNewPassword(adminForm.password), { password: deleteField() });
         }
         await updateDoc(doc(db, "admins", editingAdminId), updateData);
+        // Cabut sesi lama agar admin login ulang dengan hak akses / kata sandi terbaru
+        await authFetch("/api/staff/revoke-admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ adminId: editingAdminId }),
+        }).catch(() => {});
       } else {
         await addDoc(collection(db, "admins"), {
           ...adminPayload,
-          password: adminForm.password,
+          ...(await hashNewPassword(adminForm.password)),
           createdAt: new Date().toISOString()
         });
       }
@@ -422,7 +502,7 @@ export default function SettingsPage() {
       loadAdmins();
     } catch (err) {
       console.error(err);
-      alert("Gagal menyimpan data admin");
+      alert("Gagal menyimpan data admin" + (err instanceof Error ? `: ${err.message}` : ""));
     } finally {
       setIsAdminLoading(false);
     }
@@ -458,6 +538,12 @@ export default function SettingsPage() {
       try {
         const admin = adminsList.find(a => a.id === id);
         await deleteDoc(doc(db, "admins", id));
+        // Cabut sesi admin yang dihapus (tanpa ini sesinya bisa terus aktif)
+        await authFetch("/api/staff/revoke-admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ adminId: id }),
+        }).catch(() => {});
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Admin", `Menghapus admin ${admin?.username}`);
         loadAdmins();
@@ -820,6 +906,86 @@ export default function SettingsPage() {
         {activeTab === 'pembayaran' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
 
+            {/* ── QRIS DANA Bisnis (metode utama) ─────────────────────────────── */}
+            <div className="bg-surface border-2 border-accent/30 rounded-3xl shadow-sm p-6 md:p-8 font-sans">
+              <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+                <div className="bg-accent/10 p-3 rounded-xl text-accent text-2xl leading-none">▦</div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-2xl font-serif">QRIS DANA Bisnis</h2>
+                    <span className="bg-accent/10 text-accent text-xs font-bold px-2.5 py-1 rounded-full">Utama</span>
+                  </div>
+                  <p className="text-foreground/60 text-sm">
+                    Klien membayar langsung ke QR DANA Bisnis Anda. Sistem membuat QRIS dengan nominal pas + kode unik (1–999) untuk setiap tagihan,
+                    sehingga pembayaran mudah dikenali saat diverifikasi.
+                  </p>
+                </div>
+              </div>
+
+              {qrisSavedInfo?.valid ? (
+                <div className="mb-5 p-4 rounded-2xl bg-green-500/10 border border-green-500/30 text-sm">
+                  <p className="font-semibold text-green-700">✓ QRIS aktif: {qrisSavedInfo.merchantName}</p>
+                  <p className="text-xs text-foreground/60 mt-1">
+                    {qrisSavedInfo.merchantCity}{qrisSavedInfo.nmid ? ` · NMID ${qrisSavedInfo.nmid}` : ""} · {qrisSavedInfo.isStatic ? "QR statis" : "QR dinamis"}
+                  </p>
+                  <button type="button" onClick={() => { if (confirm("Hapus QRIS? Klien akan kembali memakai metode pembayaran lain.")) saveQris(""); }}
+                    className="mt-2 text-xs text-red-600 underline cursor-pointer">Hapus QRIS</button>
+                </div>
+              ) : (
+                <p className="mb-5 text-sm text-foreground/60">Belum ada QRIS. Unggah gambar QR DANA Bisnis Anda (yang biasa dicetak/dipajang).</p>
+              )}
+
+              <div className="max-w-xl space-y-3">
+                <label className="block text-sm font-semibold text-foreground/80">{qrisSavedInfo?.valid ? "Ganti QRIS" : "Unggah gambar QR DANA Bisnis"}</label>
+                <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleQrisImage(f); e.target.value = ""; }}
+                  className="block w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-accent/10 file:text-accent file:font-medium cursor-pointer" />
+                <details className="text-xs text-foreground/60">
+                  <summary className="cursor-pointer">Atau tempel isi (payload) QRIS secara manual</summary>
+                  <textarea rows={3} value={qrisDraft} onChange={(e) => setQrisDraft(e.target.value)} placeholder="000201010211..."
+                    className="mt-2 w-full p-3 border border-border rounded-xl bg-background font-mono text-xs" />
+                </details>
+                {qrisDraftInfo && (
+                  qrisDraftInfo.valid ? (
+                    <div className="p-3 rounded-xl bg-surface-alt border border-border text-sm">
+                      <p>Terbaca: <strong>{qrisDraftInfo.merchantName}</strong> — {qrisDraftInfo.merchantCity}{qrisDraftInfo.nmid ? ` · NMID ${qrisDraftInfo.nmid}` : ""}</p>
+                      <button type="button" onClick={() => saveQris(qrisDraft.trim())}
+                        className="mt-2 bg-accent text-white px-5 py-2.5 rounded-xl text-sm font-medium cursor-pointer">Simpan QRIS ini</button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-red-600">{qrisDraftInfo.error}</p>
+                  )
+                )}
+                {qrisMsg && <p className={`text-sm ${qrisMsg.type === "ok" ? "text-green-600" : "text-red-600"}`}>{qrisMsg.text}</p>}
+              </div>
+
+              <div className="mt-6 pt-5 border-t border-border max-w-xl">
+                <h3 className="text-sm font-semibold mb-1">Verifikasi otomatis (QRIS Midtrans)</h3>
+                <p className="text-xs text-foreground/60 mb-2">
+                  Bila kunci Midtrans terpasang, setiap tagihan mendapat <strong>QRIS resmi Midtrans</strong> yang tampil langsung di galeri
+                  dan terverifikasi otomatis lewat notifikasi Midtrans — tanpa HP khusus. Akun perorangan Midtrans cukup KTP untuk QRIS.
+                  Bila Midtrans belum aktif atau gagal, sistem otomatis memakai QR DANA Bisnis di atas (diverifikasi admin, 1 klik).
+                </p>
+                {integrations ? (
+                  <>
+                    <EnvVarRow name="MIDTRANS_SERVER_KEY" ok={integrations.midtrans.configured} detail="Dashboard Midtrans → Settings → Access Keys" />
+                    <EnvVarRow name="MIDTRANS_IS_PRODUCTION" ok={integrations.midtrans.configured}
+                      detail={integrations.midtrans.configured ? (integrations.midtrans.isProduction ? "Mode: Production" : "Mode: Sandbox (uji coba)") : "true / false"} optional />
+                    <EnvVarRow name="MIDTRANS_QRIS_ACQUIRER" ok detail={`Acquirer QRIS: ${integrations.midtransQris.acquirer} (bawaan gopay; alternatif "airpay shopee")`} optional />
+                    <p className={`mt-3 text-sm font-medium ${integrations.qris.autoVerify ? "text-green-600" : "text-foreground/60"}`}>
+                      {integrations.qris.autoVerify ? "✓ Verifikasi otomatis aktif (QRIS Midtrans)" : "Verifikasi otomatis belum aktif — pembayaran QR DANA diverifikasi admin (1 klik)."}
+                    </p>
+                    <p className="text-xs text-foreground/60 mt-2">
+                      Payment Notification URL (Dashboard Midtrans → Settings → Configuration):{" "}
+                      <code className="font-mono bg-surface-alt px-1.5 py-0.5 rounded break-all">{typeof window !== "undefined" ? window.location.origin : ""}/api/webhook/midtrans</code>
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-foreground/50">Memuat status…</p>
+                )}
+                <EnvHelp />
+              </div>
+            </div>
+
             {/* ── Midtrans Snap Integration Card ─────────────────────────────── */}
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
@@ -830,9 +996,9 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-serif">Integrasi Midtrans Snap</h2>
+                    <h2 className="text-2xl font-serif">Midtrans Snap (metode lain)</h2>
                     <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
-                      Utama
+                      Opsional
                     </span>
                   </div>
                   <p className="text-foreground/60 font-sans text-sm">
@@ -841,73 +1007,36 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <form onSubmit={savePayment} className="space-y-5 max-w-xl font-sans mb-8">
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Server Key</label>
-                  <input
-                    type="password"
-                    value={(payment as any).midtrans_server_key || ""}
-                    onChange={(e) => setPayment({ ...payment, midtrans_server_key: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
-                    placeholder="Mid-server-..."
-                    autoComplete="off"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Client Key</label>
-                  <input
-                    type="password"
-                    value={(payment as any).midtrans_client_key || ""}
-                    onChange={(e) => setPayment({ ...payment, midtrans_client_key: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
-                    placeholder="Mid-client-..."
-                    autoComplete="off"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Merchant ID</label>
-                  <input
-                    type="text"
-                    value={(payment as any).midtrans_merchant_id || ""}
-                    onChange={(e) => setPayment({ ...payment, midtrans_merchant_id: e.target.value } as any)}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
-                    placeholder="Mxxxxxxxxx"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3 mt-4">
-                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer"
-                      checked={(payment as any).midtrans_is_production || false}
-                      onChange={(e) => setPayment({ ...payment, midtrans_is_production: e.target.checked } as any)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                  </label>
-                  <span className="text-sm font-medium text-foreground/80">Gunakan Environment Production</span>
-                </div>
-                
-                 <div className="pt-4 flex items-center gap-4">
-                  <button
-                    type="submit"
-                    className="bg-blue-600 text-white px-8 py-3.5 rounded-xl font-medium hover:bg-blue-700 transition-all shadow-md cursor-pointer w-full md:w-auto"
-                  >
-                    Simpan Midtrans
-                  </button>
-                  {isPaymentSaved && (
-                    <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                      </svg>
-                      Tersimpan!
-                    </span>
-                  )}
-                </div>
-              </form>
+              <div className="max-w-xl font-sans">
+                {!integrations ? (
+                  <p className="text-sm text-foreground/50">Memuat status konfigurasi…</p>
+                ) : (
+                  <>
+                    <EnvVarRow name="MIDTRANS_SERVER_KEY" ok={integrations.midtrans.configured} detail="Kunci rahasia server (tidak pernah ditampilkan)" />
+                    <EnvVarRow name="MIDTRANS_CLIENT_KEY" ok={integrations.midtrans.hasClientKey} detail={integrations.midtrans.clientKey || "Dipakai galeri untuk membuka jendela pembayaran Snap"} />
+                    <EnvVarRow name="MIDTRANS_MERCHANT_ID" ok={!!integrations.midtrans.merchantId} detail={integrations.midtrans.merchantId} optional />
+                    <EnvVarRow name="MIDTRANS_IS_PRODUCTION" ok={integrations.midtrans.configured}
+                      detail={integrations.midtrans.configured ? (integrations.midtrans.isProduction ? "Mode: Production" : "Mode: Sandbox (uji coba)") : "true / false — bila kosong dideteksi dari awalan kunci"} optional />
+                  </>
+                )}
+                <EnvHelp />
+              </div>
             </div>
+
+            {integrations && (integrations.legacyInFirestore.payment.length > 0 || integrations.legacyInFirestore.gdrive.length > 0) && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 font-sans">
+                <p className="text-sm font-semibold text-amber-700 mb-1">⚠️ Kunci lama masih tersimpan di database</p>
+                <p className="text-xs text-foreground/70 mb-3">
+                  Field berikut tidak lagi dipakai aplikasi, tetapi masih tersimpan di Firestore:{" "}
+                  <code className="font-mono">{[...integrations.legacyInFirestore.payment.map(f => `settings/payment.${f}`), ...integrations.legacyInFirestore.gdrive.map(f => `settings/gdrive.${f}`)].join(", ")}</code>.
+                  Salin nilainya ke Environment Variables di Vercel (bila belum), lalu hapus dari database.
+                </p>
+                <button type="button" onClick={purgeLegacySecrets} disabled={isPurgingLegacy}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer disabled:opacity-60">
+                  {isPurgingLegacy ? "Menghapus..." : "Hapus kunci lama dari database"}
+                </button>
+              </div>
+            )}
 
             {/* ── Metode Transfer Manual Card ─────────────────────────────── */}
             <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
@@ -1000,67 +1129,24 @@ export default function SettingsPage() {
                       </span>
                     </div>
                     <p className="text-foreground/60 font-sans text-sm">
-                      Kredensial ini disimpan di database agar pembuatan folder otomatis klien & upload galeri berjalan lancar di server Railway / Vercel.
+                      Kredensial service account dipakai server untuk membuat folder klien & mengunggah foto. Kredensial hanya disimpan sebagai variabel lingkungan server.
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGdrive({
-                      client_email: "zeey-studio-bot@zeeystudio-503010.iam.gserviceaccount.com",
-                      private_key: "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDWcCUcUbOIWOWA\nx7Za8lbyK5y+pUD5/KkD6113RUKSX5OsZnm2BTo78lBIPiU7WppnP3xHq6r8OVsD\nInQr4HSA9/KVTx7tL/wdC7PE4mGSbRBASzZTSn5YkJatbKMIfDMXQMfn4uypkXZY\numKdj4eOi0OZRk89qZF7b6XmmPHHpKpYx+deDitwFuTXkEbs/KNk2ORYRTGwEwds\nowY3YVCSudLOzVXMso4I3WkZTjVUP7ULppuluMs2UWOpsI8b9aaY6CKDAMYDbKpp\ntDYxkUnSpAIagCWap9+iwar/0DO7zkK7BFf+qUvF9L8AOCTnzL5Uox3jVetn1h5K\n4FBp9OIZAgMBAAECggEACBTkEn1ncKnNr80MYRXq3h0efuvfofGaVWi7K3R7hg8z\n6PvYC0Vb/2g04N12DewupK9WlHqSitzG1+cmQtoRIfmA6wzMkQAC4ShbVH37Uzyo\n2mIgmxfUC6vwAHth6JRftjkNilPPJgkypoo9ubZFU64JdJRwW5X8AuTUtzcH6QVz\nb/mW65LIn0eG2n/WtEGqLtzZ3y+hlG0nxr3PFfsF5TOwBwx5g9oh5s3X2T4BpX1V\nZtaWoABxY6fgCDGqpu3f+wKzeua6STWiDASa9lG5DBz7w2ZGXLC0Iknw/QevGrkd\nGhwpnqA8KNrwPGGjhnl+et26IzGHk/O/GBt195WJAQKBgQDxYyONDDTtP9qr36fT\noX4PM8grRmKIklD6DTJqaljfv7H2Z9zXvEkPCprX/cjcWjDbmPrLBC/wu4NfkbQw\nl5mr5h8l1s7hJQtf3CUivn8GzIgEJRX00UJLzY/m3sKRSSJfCEi5PoBLda2S2Txt\nzWoT36KA3uT1/+xZwkgcWkCPgQKBgQDja118ewKNTtJXfWK92/Uswe0R5EWMC74B\nmi6GhfITDVdIYvu7RvDvyztJfLAa3dnLFWguKcw32NQcmV5o1ldpMIZgmpZ/sIh+\nv+X8eTpRacwpc2cWrgtcteTOJIZcav8IW4MibjC164o/qk8Dm9+S+DLFBCFYwPA7\ncwnyz44emQKBgQDjFsiATmaQeI0pOtzxfTFR7f43sBzMrRIfXED82hXIUdiDnsyl\n7Q2yZ+CqqKfJndPvE+mFCuhrCo2aYEHroQPCM1lESOUR7L7ZrQsGt75bUBn6BEW2\nrxM2qynhIdpbwjjivLFmDMW3t/rWdyahiilsjuybXpZ6VA0vmFYszj+EgQKBgQCa\noJWf3cOOcNlzwz0v+i5pkDGwyJTA8/rs+/hGXyyI57lA7oxaeZG4eWaGQNE8czty\nacu8F49TKYqPJ3iZr6MfUm8LoBBUIaOtCq1FTOfqExVN2bluIkh3cPVxdEQm8lkV\nRaOT9XgJOW12fEXdHk6Vj0x1yKkjv4uX4FATWCw5gQKBgQDpBBmC9DKWRJm4s3oS\n/23MK3fKBSmZOqVHKujW3bOj5BEWSAZOnBXkMe2lQP6iuVoNPevC83BfeQYj9H6b\ttWMEfSTUdUFLx1Tl0aS4ro6bpA8c6acvQ+M9MAc92ytpu/PmmM2wKwM5etVNVcu\nesIVxS9EW2Ugr1PENOWydFYw9g==\n-----END PRIVATE KEY-----\n",
-                      service_account_json: ""
-                    });
-                    alert("Kredensial Service Account bot default berhasil dimuat ke formulir. Silakan klik 'Simpan Google Drive'.");
-                  }}
-                  className="bg-surface-alt hover:bg-border text-foreground px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-border whitespace-nowrap cursor-pointer"
-                >
-                  ⚡ Isi Kredensial Bot Otomatis
-                </button>
+                {/* Tombol "Isi Kredensial Bot Otomatis" dihapus: private key tidak boleh
+                    ditanam di kode halaman karena ikut terkirim ke browser setiap pengunjung. */}
               </div>
 
-              <form onSubmit={saveGdrive} className="space-y-5 max-w-xl font-sans">
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Service Account Client Email</label>
-                  <input
-                    type="email"
-                    value={gdrive.client_email}
-                    onChange={(e) => setGdrive({ ...gdrive, client_email: e.target.value })}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-all font-mono text-sm"
-                    placeholder="zeey-studio-bot@project.iam.gserviceaccount.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold mb-2 text-foreground/80">Private Key (PEM)</label>
-                  <textarea
-                    rows={6}
-                    value={gdrive.private_key}
-                    onChange={(e) => setGdrive({ ...gdrive, private_key: e.target.value })}
-                    className="w-full p-3.5 border border-border rounded-xl bg-background focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-all font-mono text-xs"
-                    placeholder="-----BEGIN PRIVATE KEY-----\nMIIE...-----END PRIVATE KEY-----"
-                  />
-                </div>
-
-                <div className="pt-2 flex items-center gap-4">
-                  <button
-                    type="submit"
-                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-3.5 rounded-xl font-medium transition-all shadow-md cursor-pointer w-full md:w-auto flex items-center justify-center gap-2"
-                  >
-                    Simpan Google Drive
-                  </button>
-                  {isGdriveSaved && (
-                    <span className="text-green-600 text-sm flex items-center gap-1 animate-in fade-in">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                      </svg>
-                      Tersimpan!
-                    </span>
-                  )}
-                </div>
-              </form>
+              <div className="max-w-xl font-sans">
+                {!integrations ? (
+                  <p className="text-sm text-foreground/50">Memuat status konfigurasi…</p>
+                ) : (
+                  <EnvVarRow name="GOOGLE_SERVICE_ACCOUNT_KEY" ok={integrations.drive.configured}
+                    detail={integrations.drive.configured ? `Service account: ${integrations.drive.clientEmail}` : "Isi JSON service account (atau GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY)"} />
+                )}
+                <EnvHelp />
+              </div>
 
               {/* Panduan Sharing Folder Induk */}
               <div className="mt-8 pt-6 border-t border-border bg-surface-alt/30 p-4 rounded-2xl">
@@ -1072,10 +1158,25 @@ export default function SettingsPage() {
                   <br />
                   1. Buka <strong>Google Drive</strong> Anda, buat folder bernama <strong>ZeeyStudio</strong>.
                   <br />
-                  2. Klik kanan folder <strong>ZeeyStudio</strong> → <strong>Bagikan (Share)</strong> → masukkan email bot: <code className="bg-background px-1.5 py-0.5 rounded text-green-700 font-mono">zeey-studio-bot@zeeystudio-503010.iam.gserviceaccount.com</code> dengan akses <strong>Editor</strong>.
+                  2. Klik kanan folder <strong>ZeeyStudio</strong> → <strong>Bagikan (Share)</strong> → masukkan email bot: <code className="bg-background px-1.5 py-0.5 rounded text-green-700 font-mono break-all">{integrations?.drive.clientEmail || "(email service account dari GOOGLE_SERVICE_ACCOUNT_KEY)"}</code> dengan akses <strong>Editor</strong>.
                 </p>
               </div>
             </div>
+
+            {integrations && (integrations.legacyInFirestore.payment.length > 0 || integrations.legacyInFirestore.gdrive.length > 0) && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 font-sans">
+                <p className="text-sm font-semibold text-amber-700 mb-1">⚠️ Kunci lama masih tersimpan di database</p>
+                <p className="text-xs text-foreground/70 mb-3">
+                  Field berikut tidak lagi dipakai aplikasi, tetapi masih tersimpan di Firestore:{" "}
+                  <code className="font-mono">{[...integrations.legacyInFirestore.payment.map(f => `settings/payment.${f}`), ...integrations.legacyInFirestore.gdrive.map(f => `settings/gdrive.${f}`)].join(", ")}</code>.
+                  Salin nilainya ke Environment Variables di Vercel (bila belum), lalu hapus dari database.
+                </p>
+                <button type="button" onClick={purgeLegacySecrets} disabled={isPurgingLegacy}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer disabled:opacity-60">
+                  {isPurgingLegacy ? "Menghapus..." : "Hapus kunci lama dari database"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

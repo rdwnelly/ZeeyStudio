@@ -17,6 +17,7 @@ import {
   LineChart,
   Line
 } from "recharts";
+import { projectRevenue, revenueDate, monthKey, type RevenueProject } from "@/lib/revenue";
 
 type Expense = {
   id: string;
@@ -27,10 +28,9 @@ type Expense = {
   createdAt: string;
 };
 
-type Project = {
+type Project = RevenueProject & {
   id: string;
   status: string;
-  packagePrice?: number;
   createdAt: string;
 };
 
@@ -118,9 +118,8 @@ export default function FinancePage() {
   };
 
   // --- Calculate Analytics ---
-  const totalRevenue = projects
-    .filter(p => p.status !== "Menunggu Pembayaran" && p.packagePrice)
-    .reduce((sum, p) => sum + (p.packagePrice || 0), 0);
+  // Rumus seragam dengan Dasbor: lunas = paket + tambahan, belum lunas = DP (lib/revenue.ts)
+  const totalRevenue = projects.reduce((sum, p) => sum + projectRevenue(p), 0);
 
   const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = totalRevenue - totalExpense;
@@ -128,17 +127,18 @@ export default function FinancePage() {
   // Chart Data preparation (Monthly)
   const monthlyDataMap: Record<string, { month: string, Pemasukan: number, Pengeluaran: number, Laba: number, sortKey: string }> = {};
 
-  // Map revenues
+  // Map revenues (dikelompokkan menurut tanggal pelunasan)
   projects.forEach(p => {
-    if (p.status !== "Menunggu Pembayaran" && p.packagePrice && p.createdAt) {
-      const date = new Date(p.createdAt);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const amount = projectRevenue(p);
+    if (amount > 0) {
+      const date = revenueDate(p);
+      const key = monthKey(date);
       const monthLabel = date.toLocaleString("id-ID", { month: "short", year: "numeric" });
 
       if (!monthlyDataMap[key]) {
         monthlyDataMap[key] = { month: monthLabel, Pemasukan: 0, Pengeluaran: 0, Laba: 0, sortKey: key };
       }
-      monthlyDataMap[key].Pemasukan += p.packagePrice;
+      monthlyDataMap[key].Pemasukan += amount;
     }
   });
 

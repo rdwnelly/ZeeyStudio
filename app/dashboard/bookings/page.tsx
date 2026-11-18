@@ -5,6 +5,8 @@ import Sidebar from "@/components/Sidebar";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
+import { authFetch } from "@/lib/auth-client";
+import { normalizeWaNumber } from "@/lib/phone";
 import { collection, getDocs, query, updateDoc, doc } from "firebase/firestore";
 
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
@@ -28,6 +30,7 @@ type Project = {
   gdriveLinkHighRes?: string;
   paymentProofUrl?: string;
   paymentProofStatus?: 'pending' | 'verified' | 'rejected';
+  pendingPayment?: { mode?: string; amount?: number; uniqueCode?: number; createdAt?: string };
   selectedPhotoIds?: string[];
   previouslySelectedPhotoIds?: string[];
   isReopened?: boolean;
@@ -121,10 +124,7 @@ export default function BookingsPage() {
       fetchProjects();
 
       if (project.waNumber) {
-        let phone = project.waNumber.replace(/[^0-9]/g, '');
-        if (phone.startsWith('0')) {
-          phone = '62' + phone.substring(1);
-        }
+        const phone = normalizeWaNumber(project.waNumber);
         const link = `${window.location.origin}/client/${project.id}`;
         const message = `Halo ${project.clientName},\n\nPembayaran Anda telah berhasil diverifikasi oleh Admin!\n\nSilakan akses dan unduh foto Anda melalui tautan galeri berikut:\n${link}\n\nTerima kasih telah mempercayakan momen berharga Anda pada Zeey Studio!`;
         const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -191,46 +191,21 @@ export default function BookingsPage() {
 
         if (message) {
           // Format number (remove non-digits, ensure it starts with country code if needed, assuming it's mostly Indonesian 62 or 08)
-          let phone = project.waNumber.replace(/[^0-9]/g, '');
-          if (phone.startsWith('0')) {
-            phone = '62' + phone.substring(1);
-          }
+          const phone = normalizeWaNumber(project.waNumber);
           const encodedMessage = encodeURIComponent(message);
           const waUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
           window.open(waUrl, '_blank');
         }
       }
 
-      // Auto-Payroll / Commission Logic
+      // Auto-Payroll / Commission Logic — dicatat oleh server (data komisi & pengeluaran khusus Owner)
       if (newStatus === 'File Terkirim' && project?.assignedAdmin) {
         try {
-          const { getDocs, query, where, collection, addDoc } = await import("firebase/firestore");
-          // Assuming assignedAdmin is the name
-          const adminQ = query(collection(db, "admins"), where("name", "==", project.assignedAdmin));
-          const adminSnap = await getDocs(adminQ);
-          
-          if (!adminSnap.empty) {
-            const adminData = adminSnap.docs[0].data();
-            if (adminData.commission && adminData.commission > 0) {
-              const expensesQ = query(collection(db, "expenses"), 
-                 where("category", "==", "Komisi Tim"), 
-                 where("description", "==", `Komisi - ${project.assignedAdmin} (ID: ${project.id.slice(-4)})`));
-              const expensesSnap = await getDocs(expensesQ);
-              
-              if (expensesSnap.empty) {
-                await addDoc(collection(db, "expenses"), {
-                  description: `Komisi - ${project.assignedAdmin} (ID: ${project.id.slice(-4)})`,
-                  amount: adminData.commission,
-                  category: "Komisi Tim",
-                  date: new Date().toISOString().split('T')[0],
-                  createdAt: new Date().toISOString()
-                });
-                
-                // Log activity
-                await logActivity("Payroll Otomatis", `Komisi Rp${adminData.commission.toLocaleString('id-ID')} ditambahkan untuk ${project.assignedAdmin}`);
-              }
-            }
-          }
+          await authFetch('/api/staff/commission', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: id }),
+          });
         } catch (err) {
           console.error("Gagal mencatat komisi otomatis:", err);
         }
@@ -285,8 +260,7 @@ export default function BookingsPage() {
       alert(`Berhasil membuka kembali galeri klien ${project.clientName}! Status diubah menjadi 'Menunggu Pemilihan'.`);
 
       if (project.waNumber) {
-        let phone = project.waNumber.replace(/[^0-9]/g, '');
-        if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+        const phone = normalizeWaNumber(project.waNumber);
         const waMsg = `Halo ${project.clientName},\n\nSesi pemilihan foto Anda di Zeey Studio telah dibuka kembali.\nAnda masih memiliki sisa kuota ${remaining} foto yang belum dipilih (dari total ${maxCount} foto paket Anda).\n\nSilakan pilih sisa foto Anda melalui tautan galeri berikut:\n${window.location.origin}/client/${project.id}\n\nTerima kasih,\nZeey Studio`;
         const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waMsg)}`;
         if (confirm("Kirim tautan pemberitahuan WhatsApp ke klien sekarang?")) {
@@ -399,10 +373,7 @@ export default function BookingsPage() {
       alert("Nomor WhatsApp klien tidak tersedia.");
       return;
     }
-    let phone = project.waNumber.replace(/[^0-9]/g, '');
-    if (phone.startsWith('0')) {
-      phone = '62' + phone.substring(1);
-    }
+    const phone = normalizeWaNumber(project.waNumber);
     const link = `${window.location.origin}/client/${project.id}`;
     let message = "";
     
@@ -432,7 +403,7 @@ export default function BookingsPage() {
     const newTab = window.open('about:blank', '_blank');
 
     try {
-      const res = await fetch('/api/drive/create-project-folder', {
+      const res = await authFetch('/api/drive/create-project-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientName: project.clientName })
@@ -599,6 +570,13 @@ export default function BookingsPage() {
                 <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-6 text-sm text-blue-800 flex gap-3 items-start">
                   <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                   <p>Klien <strong>{verifyingProject.clientName}</strong> telah menekan tombol konfirmasi pembayaran. Klien diarahkan untuk mengirim <strong>screenshot bukti transfer</strong> ke WhatsApp Admin.</p>
+                  {verifyingProject.pendingPayment?.amount && String(verifyingProject.pendingPayment.mode || '').startsWith('qris') && (
+                    <div className="mt-3 p-3 rounded-xl bg-accent/10 border border-accent/30 text-sm">
+                      Cocokkan di aplikasi <strong>DANA Bisnis</strong>: dana masuk sebesar{" "}
+                      <strong className="font-mono text-accent">Rp {verifyingProject.pendingPayment.amount.toLocaleString('id-ID')}</strong>
+                      {verifyingProject.pendingPayment.uniqueCode ? <> (termasuk kode unik Rp {verifyingProject.pendingPayment.uniqueCode.toLocaleString('id-ID')})</> : null}.
+                    </div>
+                  )}
                 </div>
                 
                 <div className="bg-green-50/50 rounded-xl border border-green-200 p-6 flex flex-col items-center justify-center min-h-[150px] text-center">

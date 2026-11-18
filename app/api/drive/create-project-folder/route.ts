@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createFolder, getFolderIdByName, makeFolderPublic } from '@/lib/drive';
+import { verifyStaff } from '@/lib/firebase-admin';
 
 export async function POST(request: Request) {
   try {
+    if (!(await verifyStaff(request))) {
+      return NextResponse.json({ error: 'Hanya staf yang login yang dapat melakukan ini.' }, { status: 401 });
+    }
     const body = await request.json();
     const { clientName } = body;
 

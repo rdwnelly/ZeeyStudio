@@ -1,34 +1,33 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-cashify-signature') || req.headers.get('signature');
 
-    // Default to env var, but override if configured in Settings
-    let secret = process.env.CASHIFY_WEBHOOK_SECRET;
-    
-    const settingsSnap = await getDoc(doc(db, "settings", "payment"));
-    if (settingsSnap.exists()) {
-      const settingsData = settingsSnap.data();
-      if (settingsData.cashifyWebhookSecret) {
-        secret = settingsData.cashifyWebhookSecret;
-      }
-    }
+    // Secret HANYA dari variabel lingkungan server (tidak disimpan di Firestore)
+    const secret = process.env.CASHIFY_WEBHOOK_SECRET || '';
 
     if (!secret) {
       return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });
     }
 
-    // If signature is provided in headers, verify it
-    if (signature) {
-      const hash = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-      if (hash !== signature && hash !== signature.toLowerCase()) {
-        console.warn('Webhook signature mismatch. Expected:', hash, 'Got:', signature);
+    // Signature wajib & harus cocok — mencegah konfirmasi pembayaran palsu
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const sigOk = !!signature && (() => {
+      try {
+        return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature.toLowerCase()));
+      } catch {
+        return false;
       }
+    })();
+    if (!sigOk) {
+      console.warn('Cashify webhook: signature tidak ada atau tidak cocok — ditolak.');
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     const payload = JSON.parse(rawBody);
@@ -59,16 +58,13 @@ export async function POST(req: Request) {
 
     if (!projectId && paymentAmount) {
       // Fallback: Find project by pending payment amount
-      const q = query(collection(db, "projects"), where("status", "==", "Proses"));
-      const snapshot = await getDocs(q);
-      
-      for (const d of snapshot.docs) {
-        const data = d.data();
-        if (data.pendingPayment && Number(data.pendingPayment.amount) === Number(paymentAmount)) {
-          projectId = d.id;
-          break;
-        }
-      }
+      // (Sebelumnya mencari status "Proses" yang tidak pernah dipakai sistem.)
+      const snapshot = await adminDb().collection('projects').where('status', '!=', 'Selesai').get();
+      const candidates = snapshot.docs.filter(d => {
+        const data = d.data() || {};
+        return data.pendingPayment && Number(data.pendingPayment.amount) === Number(paymentAmount);
+      });
+      if (candidates.length === 1) projectId = candidates[0].id;
     }
 
     if (!projectId) {
@@ -76,11 +72,16 @@ export async function POST(req: Request) {
     }
 
     // Update Firestore
-    const projectRef = doc(db, "projects", projectId);
-    const projectSnap = await getDoc(projectRef);
+    const projectRef = adminDb().collection('projects').doc(projectId);
+    const projectSnap = await projectRef.get();
 
-    if (projectSnap.exists()) {
-      await updateDoc(projectRef, {
+    if (projectSnap.exists) {
+      // Idempoten: jangan proses ulang / menurunkan status proyek yang sudah selesai
+      const currentStatus = projectSnap.data()?.status;
+      if (currentStatus === 'Selesai' || currentStatus === 'File Terkirim') {
+        return NextResponse.json({ success: true, message: 'Project sudah Selesai' });
+      }
+      await projectRef.update({
         status: 'Selesai',
         paymentInfo: {
           method: 'Cashify QRIS',

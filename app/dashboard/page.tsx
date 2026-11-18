@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query } from "firebase/firestore";
+import { isPaidProject, projectRevenue, revenueDate, monthKey } from "@/lib/revenue";
 
 type Project = {
   id: string;
@@ -71,29 +72,28 @@ export default function DashboardHome() {
         let active = 0;
         let completed = 0;
         let revenue = 0;
-        
+
+        // Rumus pendapatan seragam dengan modul Keuangan (lib/revenue.ts)
         fetchedProjects.forEach((p) => {
-          if (p.status === 'Selesai' || p.status === 'File Terkirim' || p.status === 'Lunas') {
-            completed++;
-            if (p.packagePrice) revenue += p.packagePrice;
-            if (p.extraRevenue) revenue += p.extraRevenue;
-          } else {
-            active++;
-            if (p.dpAmount) revenue += p.dpAmount; // DP dari proyek aktif tetap dihitung
-          }
+          if (isPaidProject(p)) completed++;
+          else active++;
+          revenue += projectRevenue(p);
         });
-        
+
         setActiveProjectsCount(active);
         setCompletedProjectsCount(completed);
         setTotalRevenue(revenue);
 
         // Ambil data Editor
-        const reqSnapshot = await getDocs(query(collection(db, "editor_requests")));
-        let editorCount = 0;
-        reqSnapshot.forEach(doc => {
-          if (doc.data().status === 'Selesai') editorCount++;
-        });
-        setCompletedEditorTasks(editorCount);
+        // editor_requests hanya dapat dibaca Owner / admin berakses Tugas Editor
+        if (role === 'owner' || access.includes('editor')) {
+          const reqSnapshot = await getDocs(query(collection(db, "editor_requests")));
+          let editorCount = 0;
+          reqSnapshot.forEach(doc => {
+            if (doc.data().status === 'Selesai') editorCount++;
+          });
+          setCompletedEditorTasks(editorCount);
+        }
         
         // Prepare Chart Data (Last 6 Months)
         const last6Months: Array<{ key: string, label: string, revenue: number, proyek: number }> = [];
@@ -110,23 +110,12 @@ export default function DashboardHome() {
         }
 
         fetchedProjects.forEach((p) => {
-          const createdDate = new Date(p.createdAt);
-          const createdKey = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}`;
-          const cMonth = last6Months.find(m => m.key === createdKey);
+          const cMonth = last6Months.find(m => m.key === monthKey(new Date(p.createdAt)));
           if (cMonth) cMonth.proyek += 1;
-          
-          let pRev = 0;
-          if (p.status === 'Selesai' || p.status === 'File Terkirim' || p.status === 'Lunas') {
-            if (p.packagePrice) pRev += p.packagePrice;
-            if (p.extraRevenue) pRev += p.extraRevenue;
-          } else {
-             if (p.dpAmount) pRev += p.dpAmount;
-          }
 
+          const pRev = projectRevenue(p);
           if (pRev > 0) {
-            const compDate = p.completedAt ? new Date(p.completedAt) : new Date(p.createdAt);
-            const compKey = `${compDate.getFullYear()}-${String(compDate.getMonth() + 1).padStart(2, '0')}`;
-            const rMonth = last6Months.find(m => m.key === compKey);
+            const rMonth = last6Months.find(m => m.key === monthKey(revenueDate(p)));
             if (rMonth) rMonth.revenue += pRev;
           }
         });
@@ -298,7 +287,7 @@ export default function DashboardHome() {
               <div className="bg-surface border border-border p-5 md:p-6 rounded-3xl shadow-sm">
                 <h3 className="text-lg md:text-xl font-serif mb-6 border-b border-border/50 pb-3 flex items-center">
                   <span className="w-2 h-6 bg-accent rounded-full mr-3"></span>
-                  Tren Pendapatan Ekstra (6 Bulan)
+                  Tren Pendapatan (6 Bulan)
                 </h3>
                 <div className="h-[250px] md:h-[300px] w-full font-sans text-xs">
                   <ResponsiveContainer width="100%" height="100%">

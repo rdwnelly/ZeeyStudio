@@ -1,27 +1,37 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { adminDb } from '@/lib/firebase-admin';
 import { createSnapClient, getMidtransConfig } from '@/lib/midtrans';
+import { billFor, findSubToken, isLocked, loadPriceList, loadProject } from '@/lib/client-project';
+
+export const runtime = 'nodejs';
 
 /**
  * Create Payment Request (Midtrans Snap)
+ * Body: { projectId, token? }
  *
- * Membuat transaksi via Midtrans Snap API dan mengembalikan token Snap.
+ * Nominal tagihan DIHITUNG DI SERVER dari pilihan foto & layanan tambahan yang
+ * sudah disimpan (POST /api/client/selection), bukan dari angka kiriman browser.
  */
 export async function POST(req: Request) {
   try {
-    const { orderId, grossAmount, clientName, waNumber } = await req.json();
-
-    if (!orderId || !grossAmount) {
-      return NextResponse.json(
-        { success: false, error: 'orderId dan grossAmount wajib diisi' },
-        { status: 400 }
-      );
+    const body = await req.json();
+    const project = await loadProject(String(body.projectId || ''));
+    if (!project) {
+      return NextResponse.json({ success: false, error: 'Proyek tidak ditemukan' }, { status: 404 });
+    }
+    const sub = findSubToken(project, body.token);
+    if (isLocked(project, sub)) {
+      return NextResponse.json({ success: false, error: 'Pemilihan foto sudah selesai.' }, { status: 409 });
     }
 
-    // Ekstrak projectId dari orderId (Format: INV-{projectId}-{timestamp})
-    const match = orderId.match(/^INV-(.+)-\d+$/);
-    const projectId = match ? match[1] : null;
+    const priceList = await loadPriceList();
+    const selected = sub ? sub.selectedPhotoIds || [] : project.selectedPhotoIds || [];
+    const bill = billFor(project, sub, selected.length, project.selectedAddons || {}, priceList);
+    if (bill.grandTotal <= 0) {
+      return NextResponse.json({ success: false, error: 'Tidak ada tagihan yang perlu dibayar.' }, { status: 400 });
+    }
+
+    const orderId = `INV-${project.id}-${Date.now()}`;
 
     // ── Midtrans Snap API ───────────────────────────────────────────────────
     try {
@@ -29,39 +39,25 @@ export async function POST(req: Request) {
       const snap = await createSnapClient();
       if (!snap || !config) {
         return NextResponse.json(
-          {
-            success: false,
-            error: 'Midtrans belum dikonfigurasi. Silakan isi Server Key & Client Key di Settings Dashboard.',
-          },
+          { success: false, error: 'Midtrans belum dikonfigurasi. Atur MIDTRANS_SERVER_KEY & MIDTRANS_CLIENT_KEY di Environment Variables server.' },
           { status: 400 }
         );
       }
 
-      const midtransPayload = {
-        transaction_details: {
-          order_id: orderId,
-          gross_amount: grossAmount,
-        },
-        customer_details: {
-          first_name: clientName || 'Client',
-          phone: waNumber || '',
-        },
-      };
+      const transaction = await snap.createTransaction({
+        transaction_details: { order_id: orderId, gross_amount: bill.grandTotal },
+        customer_details: { first_name: project.clientName || 'Client', phone: project.waNumber || '' },
+      });
 
-      const transaction = await snap.createTransaction(midtransPayload);
-      console.log('[create-payment] Midtrans Snap token:', transaction.token, 'isProduction:', config.isProduction);
-
-      if (projectId) {
-        await updateDoc(doc(db, 'projects', projectId), {
-          pendingPayment: {
-            orderId,
-            amount: grossAmount,
-            midtransToken: transaction.token,
-            mode: 'midtrans-snap',
-            createdAt: new Date().toISOString(),
-          },
-        });
-      }
+      await adminDb().collection('projects').doc(project.id).update({
+        pendingPayment: {
+          orderId,
+          amount: bill.grandTotal,
+          midtransToken: transaction.token,
+          mode: 'midtrans-snap',
+          createdAt: new Date().toISOString(),
+        },
+      });
 
       return NextResponse.json({
         success: true,
@@ -70,24 +66,21 @@ export async function POST(req: Request) {
         clientKey: config.clientKey,
         isProduction: config.isProduction,
         transactionId: orderId,
-        amount: grossAmount,
+        orderId,
+        amount: bill.grandTotal,
         status: 'pending',
         mode: 'midtrans-snap',
       });
-    } catch (midtransError: any) {
-      console.error('[create-payment] Midtrans API Gagal:', midtransError.message);
+    } catch (midtransError: unknown) {
+      const message = midtransError instanceof Error ? midtransError.message : String(midtransError);
+      console.error('[Midtrans Snap] Error:', message);
       return NextResponse.json(
-        {
-          success: false,
-          isMidtransError: true,
-          error: `Midtrans sedang dalam proses peninjauan/review bisnis: ${midtransError.message}`,
-        },
+        { success: false, isMidtransError: true, error: `Midtrans sedang dalam proses peninjauan/review bisnis: ${message}` },
         { status: 200 }
       );
     }
-  } catch (error: any) {
-    console.error('[create-payment] Server error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Create Payment Error:', error);
+    return NextResponse.json({ success: false, error: 'Gagal membuat pembayaran' }, { status: 500 });
   }
 }
-

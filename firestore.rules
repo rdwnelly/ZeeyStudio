@@ -1,0 +1,100 @@
+rules_version = '2';
+
+// ============================================================================
+//  Firestore Security Rules — Zeey Studio
+//
+//  Peran dibaca dari klaim token Firebase Auth (request.auth.token):
+//   • owner : Owner (email/password; klaim diberi server via /api/auth/owner-claim
+//             hanya untuk email yang tercantum di OWNER_EMAILS)
+//   • admin : staf (login via /api/auth/admin-login → custom token) dengan
+//             daftar hak akses modul di klaim `accesses`
+//             ("create", "bookings", "editor", "crm")
+//
+//  Klien (galeri /client/[id]) TIDAK mengakses Firestore langsung; semua
+//  baca/tulis klien, webhook pembayaran, dan Google Drive berjalan di API Route
+//  memakai Firebase Admin SDK (yang tidak terikat rules ini).
+//  Semua akses lain DITOLAK secara default.
+// ============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Fungsi bantu ────────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner() {
+      return signedIn() && request.auth.token.role == 'owner';
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.role == 'admin';
+    }
+    function isStaff() {
+      return isOwner() || isAdmin();
+    }
+    function hasAccess(module) {
+      return isOwner()
+        || (isAdmin() && request.auth.token.accesses is list && module in request.auth.token.accesses);
+    }
+    // Hanya field tertentu yang berubah pada update
+    function onlyChanges(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // ── Proyek / pesanan ────────────────────────────────────────────────────
+    match /projects/{projectId} {
+      // Semua staf membaca (dasbor, kalender, tugas editor, notifikasi)
+      allow read: if isStaff();
+      allow create: if hasAccess('create');
+      allow update: if hasAccess('create') || hasAccess('bookings') || hasAccess('crm');
+      allow delete: if hasAccess('bookings') || hasAccess('crm');
+    }
+
+    // ── Akun admin (berisi hash kata sandi, komisi, info bank) ─────────────
+    match /admins/{adminId} {
+      allow read, write: if isOwner();
+    }
+
+    // ── Daftar harga ────────────────────────────────────────────────────────
+    match /pricelist/{itemId} {
+      allow read: if isStaff();
+      allow write: if isOwner();
+    }
+
+    // ── Keuangan (pengeluaran & komisi) ─────────────────────────────────────
+    match /expenses/{expenseId} {
+      allow read, write: if isOwner();
+    }
+
+    // ── Permintaan editor (dibuat klien lewat API server) ───────────────────
+    match /editor_requests/{requestId} {
+      allow read: if hasAccess('editor');
+      // Editor hanya boleh mengubah status & tautan hasil edit
+      allow update: if isOwner()
+        || (hasAccess('editor') && onlyChanges(['status', 'editedDriveLink'])
+            && request.resource.data.status in ['Pending', 'In Progress', 'Selesai']);
+      allow create, delete: if isOwner();
+    }
+
+    // ── Riwayat aktivitas (audit log) ───────────────────────────────────────
+    match /audit_logs/{logId} {
+      allow read: if isOwner();
+      // Staf hanya boleh MENAMBAH catatan berformat benar; tidak bisa mengubah/menghapus
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['user', 'role', 'action', 'details', 'timestamp'])
+        && request.resource.data.action is string
+        && request.resource.data.details is string
+        && request.resource.data.role == request.auth.token.role;
+      allow update, delete: if false;
+    }
+
+    // ── Pengaturan (profil, pembayaran, kredensial Drive) ───────────────────
+    match /settings/{docId} {
+      allow read, write: if isOwner();
+    }
+
+    // ── Selain di atas: tolak ───────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
