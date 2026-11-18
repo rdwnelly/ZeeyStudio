@@ -58,8 +58,20 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('API Error:', error);
+    const msg = error?.message || String(error);
+    // Tangkap error OpenSSL private key dan berikan pesan yang jelas
+    if (msg.includes('DECODER') || msg.includes('unsupported') || msg.includes('1E08010C')) {
+      return NextResponse.json(
+        {
+          error: 'Private key Google Service Account tidak dapat dibaca (error OpenSSL). ' +
+            'Pastikan seluruh isi JSON service account disalin dengan benar ke variabel lingkungan GOOGLE_SERVICE_ACCOUNT_KEY di hosting Anda. ' +
+            'Tips: salin isi file JSON apa adanya (satu baris utuh), jangan potong atau ubah format.'
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json(
-      { error: error.message || 'Failed to create folder' },
+      { error: msg || 'Failed to create folder' },
       { status: 500 }
     );
   }

@@ -13,14 +13,20 @@
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { isUsablePrivateKey, normalizePrivateKey, parseServiceAccountJson } from "./pem";
 
 const DEFAULT_PROJECT_ID =
   process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "zeeystudio-91d12";
 
 function cleanKey(key: string): string {
-  let k = key.trim();
-  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) k = k.slice(1, -1);
-  return k.replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+  const pem = normalizePrivateKey(key);
+  if (!isUsablePrivateKey(pem)) {
+    throw new Error(
+      "Private key Firebase Admin tidak dapat dibaca (format PEM rusak atau terpotong). " +
+        "Salin ulang seluruh isi berkas JSON service account Firebase ke FIREBASE_SERVICE_ACCOUNT_KEY."
+    );
+  }
+  return pem;
 }
 
 function initAdminApp(): App {
@@ -30,7 +36,10 @@ function initAdminApp(): App {
   const usingEmulator = !!(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    const json = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    const json = parseServiceAccountJson(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    if (!json) {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY bukan isi JSON service account yang valid (client_email / private_key tidak ditemukan).");
+    }
     return initializeApp(
       {
         credential: cert({

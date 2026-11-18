@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb, verifyStaff } from '@/lib/firebase-admin';
 import { getMidtransConfig } from '@/lib/midtrans';
-import { getDriveCredentials } from '@/lib/drive';
+import { getDriveCredentialStatus } from '@/lib/drive';
 import { getQrisSetup } from '@/lib/qris-payment';
 import { getQrisInfo } from '@/lib/qris';
 
@@ -44,7 +44,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Hanya Owner' }, { status: 401 });
   }
   const midtrans = await getMidtransConfig();
-  const drive = getDriveCredentials();
+  const driveStatus = getDriveCredentialStatus();
+  const drive = driveStatus.credentials;
   const qris = await getQrisSetup();
   const qrisInfo = qris.staticQris ? getQrisInfo(qris.staticQris) : null;
   return NextResponse.json({
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
     drive: {
       configured: !!drive,
       clientEmail: drive?.client_email || '', // perlu ditampilkan untuk berbagi folder "ZeeyStudio"
+      error: driveStatus.error || '',
     },
     qris: {
       configured: !!qris.staticQris,

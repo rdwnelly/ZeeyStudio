@@ -1,50 +1,83 @@
 import { google } from 'googleapis';
+import { isUsablePrivateKey, normalizePrivateKey, parseServiceAccountJson } from './pem';
 
 // Define the scopes required (we need full drive access for folders and files)
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
-function cleanPrivateKey(key: string): string {
-  let k = key.trim();
-  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) k = k.slice(1, -1);
-  return k.replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
-}
+export type DriveCredentialStatus = {
+  credentials: { client_email: string; private_key: string } | null;
+  error?: string; // alasan bila variabel ada tetapi tidak bisa dipakai
+};
 
 /**
  * Kredensial Service Account Google Drive — HANYA dari variabel lingkungan server:
- *  - GOOGLE_SERVICE_ACCOUNT_KEY  = isi JSON service account (satu baris), atau
+ *  - GOOGLE_SERVICE_ACCOUNT_KEY  = isi JSON service account, atau
  *  - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY
- * Tidak lagi dibaca dari Firestore maupun berkas JSON di folder proyek.
+ * Private key dinormalisasi (baris baru, \n literal, tanda kutip, CRLF) dan divalidasi.
  */
-export function getDriveCredentials(): { client_email: string; private_key: string } | null {
+export function getDriveCredentialStatus(): DriveCredentialStatus {
+  let email = "";
+  let rawKey = "";
+  let source = "";
+
   if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-    try {
-      const parsed = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
-      if (parsed.client_email && parsed.private_key) {
-        return { client_email: parsed.client_email, private_key: cleanPrivateKey(parsed.private_key) };
-      }
-    } catch (e) {
-      console.error('GOOGLE_SERVICE_ACCOUNT_KEY bukan JSON yang valid:', e);
+    const parsed = parseServiceAccountJson(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+    if (parsed) {
+      email = parsed.client_email;
+      rawKey = parsed.private_key;
+      source = "GOOGLE_SERVICE_ACCOUNT_KEY";
+    } else if (!process.env.GOOGLE_PRIVATE_KEY) {
+      return { credentials: null, error: "GOOGLE_SERVICE_ACCOUNT_KEY bukan isi JSON service account yang valid (client_email / private_key tidak ditemukan)." };
     }
   }
-  if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    return { client_email: process.env.GOOGLE_CLIENT_EMAIL.trim(), private_key: cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY) };
+  if (!rawKey && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    email = process.env.GOOGLE_CLIENT_EMAIL.trim();
+    rawKey = process.env.GOOGLE_PRIVATE_KEY;
+    source = "GOOGLE_PRIVATE_KEY";
   }
-  return null;
+  if (!rawKey) return { credentials: null };
+
+  const privateKey = normalizePrivateKey(rawKey);
+  if (!isUsablePrivateKey(privateKey)) {
+    return {
+      credentials: null,
+      error: `Private key di ${source} tidak dapat dibaca (format PEM rusak atau terpotong). ` +
+        "Salin ulang seluruh isi berkas JSON service account Google ke GOOGLE_SERVICE_ACCOUNT_KEY.",
+    };
+  }
+  return { credentials: { client_email: email, private_key: privateKey } };
+}
+
+export function getDriveCredentials(): { client_email: string; private_key: string } | null {
+  return getDriveCredentialStatus().credentials;
 }
 
 /**
  * Initializes and returns an authenticated Google Drive service instance.
  */
 export async function getDriveService() {
-  const credentials = getDriveCredentials();
+  const { credentials, error } = getDriveCredentialStatus();
   if (!credentials) {
     throw new Error(
+      error ||
       'Kredensial Google Drive belum diatur. Isi GOOGLE_SERVICE_ACCOUNT_KEY (JSON service account) ' +
       'atau GOOGLE_CLIENT_EMAIL & GOOGLE_PRIVATE_KEY di variabel lingkungan server.'
     );
   }
-  const auth = new google.auth.GoogleAuth({ scopes: SCOPES, credentials });
-  return google.drive({ version: 'v3', auth });
+  try {
+    const auth = new google.auth.GoogleAuth({ scopes: SCOPES, credentials });
+    return google.drive({ version: 'v3', auth });
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('DECODER') || msg.includes('unsupported') || msg.includes('routines')) {
+      throw new Error(
+        'Private key Google Service Account tidak dapat dibaca oleh OpenSSL (error:1E08010C:DECODER routines::unsupported). ' +
+        'Kemungkinan isi GOOGLE_SERVICE_ACCOUNT_KEY terpotong atau format PEM-nya rusak saat disalin ke variabel lingkungan. ' +
+        'Salin ulang seluruh isi berkas JSON service account ke GOOGLE_SERVICE_ACCOUNT_KEY.'
+      );
+    }
+    throw err;
+  }
 }
 
 /**
