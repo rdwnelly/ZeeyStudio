@@ -209,6 +209,14 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
   const [qrisPayment, setQrisPayment] = useState<QrisPayment | null>(null);
   const [qrisError, setQrisError] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [payMethod, setPayMethod] = useState<'qris' | 'transfer'>('qris');
+  // Kunci gulir halaman di belakang lembar pembayaran (penting di HP)
+  useEffect(() => {
+    if (!showInvoice) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [showInvoice]);
   const qrisPaymentRef = useRef<QrisPayment | null>(null);
   useEffect(() => { qrisPaymentRef.current = qrisPayment; }, [qrisPayment]);
   const [isSnapLoaded, setIsSnapLoaded] = useState(false);
@@ -1096,6 +1104,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     }
   };
 
+  /** Metode alternatif: Midtrans Snap (kartu, VA, dll.). */
+  const handleAltPayment = () => {
+    if (snapToken) triggerSnapPayment(snapToken);
+    else generateQris();
+  };
+
   if (isLoading) return (
     <div className="min-h-screen bg-background">
       <div className="h-24" />
@@ -1547,308 +1561,294 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         </div>
       )}
 
-      {/* Invoice Modal Overlay */}
-      {showInvoice && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-surface w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-8">
-              <h2 className="text-3xl mb-2 font-serif">{t.invoiceTitle}</h2>
-              <p className="text-foreground/70 font-sans mb-8">
-                {t.invoiceDesc}
-              </p>
-              
-              <div className="space-y-4 mb-8 font-sans">
-                <div className="flex justify-between text-sm pb-4 border-b border-border">
-                  <span className="text-foreground/70">{t.includedLimit}</span>
-                  <span className="font-medium">{t.photosCountLabel(project.maxPhotos)}</span>
-                </div>
-                <div className="flex justify-between text-sm pb-4 border-b border-border">
-                  <span className="text-foreground/70">{t.totalSelected}</span>
-                  <span className="font-medium">{t.photosCountLabel(selectedPhotos.size)}</span>
-                </div>
-                {basePackagePrice > 0 && (
-                  <div className="flex justify-between text-sm pb-4 border-b border-border">
-                    <span className="text-foreground/70">{t.packageLabel(project.packageName || 'Kustom')}</span>
-                    <span className="font-medium">Rp {basePackagePrice.toLocaleString('id-ID')}</span>
+      {/* Lembar Pembayaran — bottom sheet di HP, dialog di layar lebar.
+          Header (total + tutup) tetap; isi dapat digulir sehingga tidak pernah terpotong. */}
+      {showInvoice && (() => {
+        const method: 'qris' | 'transfer' = qrisSetup.enabled ? payMethod : 'transfer';
+        const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
+        const lineItems: { label: string; value: string; green?: boolean }[] = [];
+        if (basePackagePrice > 0) lineItems.push({ label: t.packageLabel(project.packageName || 'Kustom'), value: rp(basePackagePrice) });
+        if (extraPhotosCount > 0) lineItems.push({ label: t.extraPhotosLabel(extraPhotosCount, activeExtraPhotoPrice.toLocaleString('id-ID')), value: rp(extraPhotosCost) });
+        Object.entries(selectedAddons).forEach(([id, qty]) => {
+          const item = priceList.find((p) => p.id === id);
+          if (!item || !qty) return;
+          const paid = item.scheme === 'sudah bayar';
+          lineItems.push({ label: `${item.name} × ${qty}${paid ? ` · ${t.alreadyPaid}` : ''}`, value: paid ? 'Rp 0' : rp(item.price * qty), green: paid });
+        });
+        if (dpAmount > 0) lineItems.push({ label: t.dpAmountLabel, value: `− ${rp(dpAmount)}`, green: true });
+
+        const waIcon = (
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+        );
+        const waConfirm = (outline = false) => {
+          const cls = `w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+            outline ? 'border border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+          }`;
+          const label = outline ? t.confirmPaymentViaWa : t.confirmViaWa;
+          return studioWaUrl ? (
+            <a href={studioWaUrl} target="_blank" rel="noopener noreferrer" onClick={handleWhatsAppConfirmAsync} className={cls}>{waIcon}{label}</a>
+          ) : (
+            <button type="button" onClick={handleWhatsAppConfirmAsync} className={cls}>{waIcon}{label}</button>
+          );
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm sm:p-4 animate-in fade-in duration-200">
+            <div
+              data-pay-sheet
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pay-title"
+              className="w-full sm:max-w-md max-h-[92dvh] sm:max-h-[88dvh] flex flex-col bg-surface text-foreground rounded-t-3xl sm:rounded-3xl shadow-2xl border border-border/60 font-sans animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-300"
+            >
+              {/* Header */}
+              <div className="shrink-0 px-5 pt-2.5 pb-4 border-b border-border/60">
+                <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-foreground/15 sm:hidden" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 id="pay-title" className="text-[11px] font-medium uppercase tracking-wider text-foreground/50">{t.invoiceTitle}</h2>
+                    <p className="mt-0.5 text-2xl font-bold tracking-tight tabular-nums">{rp(grandTotal)}</p>
+                    <p className="text-[11px] text-foreground/50">{t.remainingBill} · {t.photosCountLabel(selectedPhotos.size)}</p>
                   </div>
-                )}
-                {extraPhotosCount > 0 && (
-                  <div className="flex justify-between text-sm pb-4 border-b border-border">
-                    <span className="text-foreground/70">{t.extraPhotosLabel(extraPhotosCount, activeExtraPhotoPrice.toLocaleString('id-ID'))}</span>
-                    <span className="font-medium">Rp {extraPhotosCost.toLocaleString('id-ID')}</span>
-                  </div>
-                )}
-                {Object.entries(selectedAddons).map(([id, qty]) => {
-                  const item = priceList.find(p => p.id === id);
-                  if (!item) return null;
-                  return (
-                    <div key={id} className="flex justify-between text-sm pb-4 border-b border-border">
-                      <span className="text-foreground/70">
-                        {item.name} ({qty} x {item.scheme === 'sudah bayar' ? t.alreadyPaid : `Rp ${item.price.toLocaleString('id-ID')}`})
-                      </span>
-                      <span className={`font-medium ${item.scheme === 'sudah bayar' ? 'text-emerald-600' : ''}`}>
-                        {item.scheme === 'sudah bayar' ? 'Rp 0' : `Rp ${(item.price * qty).toLocaleString('id-ID')}`}
-                      </span>
-                    </div>
-                  );
-                })}
-                {dpAmount > 0 && (
-                  <div className="flex justify-between text-sm pb-4 border-b border-border text-green-600">
-                    <span>{t.dpAmountLabel}</span>
-                    <span className="font-medium">- Rp {dpAmount.toLocaleString('id-ID')}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xl pt-2 font-serif">
-                  <span>{t.remainingBill}</span>
-                  <span className="text-accent">Rp {grandTotal.toLocaleString('id-ID')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowInvoice(false)}
+                    aria-label={t.closeBtn}
+                    className="shrink-0 w-9 h-9 rounded-full bg-surface-alt hover:bg-border text-foreground/60 hover:text-foreground flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
                 </div>
               </div>
 
-              {/* ── QRIS langsung ke QR DANA Bisnis studio (metode utama) ── */}
-              {qrisSetup.enabled && project.paymentProofStatus !== 'pending' && (
-                <div className="w-full border-2 border-accent/40 bg-accent/5 rounded-2xl p-5 mb-6 font-sans text-center">
-                  <h4 className="font-semibold text-base text-foreground">{t.qrisTitle}</h4>
-                  <p className="text-[11px] text-foreground/60 mb-4">{t.qrisDesc(qrisPayment?.merchantName || qrisSetup.merchantName)}</p>
-
-                  {isPaymentLoading && !qrisPayment ? (
-                    <div className="py-10 flex flex-col items-center gap-3 text-xs text-foreground/60">
-                      <div className="w-8 h-8 border-4 border-accent/30 border-t-accent rounded-full animate-spin" />
-                      {t.qrisLoading}
-                    </div>
-                  ) : qrisError ? (
-                    <div className="py-4 text-xs text-red-600">
-                      <p className="mb-3">{t.qrisFailed(qrisError)}</p>
-                      <button type="button" onClick={startQrisPayment} className="px-4 py-2 bg-accent text-white rounded-xl font-medium cursor-pointer">{t.qrisRefresh}</button>
-                    </div>
-                  ) : qrisPayment ? (() => {
-                    const minutesLeft = Math.max(0, Math.ceil((new Date(qrisPayment.expiresAt).getTime() - nowTick) / 60000));
-                    const expired = minutesLeft <= 0;
-                    return (
-                      <>
-                        <div className={`inline-block bg-white p-3 rounded-2xl shadow-sm ${expired ? 'opacity-30' : ''}`}>
-                          {qrisPayment.qrString ? (
-                            <QRCodeSVG id="qris-svg" value={qrisPayment.qrString} size={220} level="M" marginSize={1} />
-                          ) : qrisPayment.qrUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={qrisPayment.qrUrl} alt="QRIS" width={220} height={220} />
-                          ) : null}
-                        </div>
-                        {qrisPayment.checkoutUrl && (
-                          <a href={qrisPayment.checkoutUrl} target="_blank" rel="noopener noreferrer" className="block mt-2 text-xs text-accent underline">
-                            {t.qrisOpenCheckout}
-                          </a>
-                        )}
-                        <p className="text-[11px] text-foreground/60 mt-3">{t.qrisAmountLabel}</p>
-                        <p className="text-2xl font-bold text-accent font-mono tracking-wide">Rp {qrisPayment.amount.toLocaleString('id-ID')}</p>
-                        {qrisPayment.uniqueCode > 0 && (
-                          <p className="text-[11px] text-foreground/60 mt-1 px-4">{t.qrisUniqueCodeNote(qrisPayment.uniqueCode.toLocaleString('id-ID'))}</p>
-                        )}
-                        {expired ? (
-                          <div className="mt-3 text-xs">
-                            <p className="text-red-600 mb-2">{t.qrisExpired}</p>
-                            <button type="button" onClick={startQrisPayment} className="px-4 py-2 bg-accent text-white rounded-xl font-medium cursor-pointer">{t.qrisRefresh}</button>
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-foreground/50 mt-2">{t.qrisExpiresIn(minutesLeft)}</p>
-                        )}
-                        {qrisPayment.qrString ? (
-                          <button type="button" onClick={downloadQrisImage} className="mt-3 text-xs text-accent underline cursor-pointer">{t.qrisSaveImage}</button>
-                        ) : qrisPayment.qrUrl ? (
-                          <a href={qrisPayment.qrUrl} target="_blank" rel="noopener noreferrer" download className="mt-3 inline-block text-xs text-accent underline">{t.qrisSaveImage}</a>
-                        ) : null}
-                        <p className="text-[10px] text-foreground/50 mt-1 px-4">{t.qrisSaveHint}</p>
-                        {qrisPayment.autoVerify ? (
-                          <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-emerald-700 bg-emerald-500/10 rounded-xl px-3 py-2">
-                            <div className="w-3 h-3 border-2 border-emerald-500/40 border-t-emerald-600 rounded-full animate-spin" />
-                            {t.qrisWaitingAuto}
-                          </div>
-                        ) : (
-                          <p className="mt-4 text-[11px] text-foreground/70">{t.qrisManualHint}</p>
-                        )}
-                      </>
-                    );
-                  })() : null}
-                </div>
-              )}
-
-              {/* Notice jika Midtrans sedang review */}
-              {midtransReviewNotice && (
-                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 p-4 rounded-2xl text-xs font-sans mb-6 flex items-start gap-3">
-                  <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div>
-                    <strong className="block font-semibold mb-0.5">{t.midtransReviewNoticeTitle}</strong>
-                    <span>{midtransReviewNotice}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Transfer Manual (Bank & E-Wallet) Card */}
-              {project.paymentProofStatus === 'pending' ? (
-                <div className="bg-surface-alt border border-border rounded-2xl p-6 text-center animate-in fade-in zoom-in mb-6">
-                  <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                  </div>
-                  <h3 className="font-serif text-lg mb-1 text-foreground">{t.awaitingAdminTitle}</h3>
-                  <p className="text-xs font-sans text-foreground/60">
-                    {t.awaitingAdminDesc}
-                  </p>
-                </div>
-              ) : project.paymentProofStatus === 'rejected' ? (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center animate-in fade-in zoom-in mb-6">
-                  <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                  </div>
-                  <h3 className="font-serif text-lg mb-1 text-red-900">{t.proofInvalidTitle}</h3>
-                  <p className="text-xs font-sans text-red-700 mb-4">
-                    {t.proofInvalidDesc}
-                  </p>
-                  <button 
-                    onClick={handleWhatsAppConfirmAsync}
-                    className="w-full px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white font-medium font-sans rounded-xl text-xs flex items-center justify-center gap-2"
-                  >
-                    {t.contactAdminWa}
-                  </button>
-                </div>
-              ) : (
-                <div className="w-full bg-surface-alt/70 border border-border rounded-2xl p-5 mb-6 font-sans">
-                  <div className="flex items-center justify-between mb-3 border-b border-border/60 pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-emerald-500/10 text-emerald-600 p-2 rounded-xl">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
-                        </svg>
+              {/* Isi (dapat digulir) */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] space-y-4">
+                {/* Rincian tagihan (ringkas, bisa dibuka) */}
+                <details className="group rounded-2xl bg-surface-alt/60 border border-border/60">
+                  <summary className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer list-none select-none text-xs [&::-webkit-details-marker]:hidden">
+                    <span className="font-medium text-foreground/70">{t.billDetails}</span>
+                    <span className="flex items-center gap-1.5 text-foreground/45">
+                      {t.quotaSummary(project.maxPhotos, selectedPhotos.size)}
+                      <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>
+                    </span>
+                  </summary>
+                  <div className="px-4 pb-3 space-y-2 text-xs">
+                    {lineItems.map((li, i) => (
+                      <div key={i} className="flex justify-between gap-3">
+                        <span className="text-foreground/60">{li.label}</span>
+                        <span className={`shrink-0 font-medium tabular-nums ${li.green ? 'text-emerald-600' : ''}`}>{li.value}</span>
                       </div>
-                      <div>
-                        <h4 className="font-semibold text-sm text-foreground">{t.manualTransferTitle}</h4>
-                        <p className="text-[11px] text-foreground/60">{t.manualTransferDesc}</p>
-                      </div>
+                    ))}
+                    <div className="flex justify-between gap-3 pt-2 border-t border-border/60 text-sm font-semibold">
+                      <span>{t.remainingBill}</span>
+                      <span className="tabular-nums">{rp(grandTotal)}</span>
                     </div>
-                    {!qrisSetup.enabled && (
-                      <span className="text-[10px] uppercase font-bold bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full">
-                        {t.primaryActiveTag}
-                      </span>
-                    )}
                   </div>
+                </details>
 
-                  {manualBankInfo?.bankName || manualBankInfo?.accountNumber ? (
-                    <div className="space-y-2.5 mb-4 text-xs">
-                      <div className="flex justify-between items-center bg-surface p-3 rounded-xl border border-border">
-                        <div>
-                          <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.bankOrEwallet}</span>
-                          <span className="font-bold text-foreground text-sm">{manualBankInfo.bankName || "BCA / Bank Transfer"}</span>
-                        </div>
-                        {manualBankInfo.accountName && (
-                          <div className="text-right">
-                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.accountName}</span>
-                            <span className="font-medium text-foreground">{manualBankInfo.accountName}</span>
-                          </div>
-                        )}
-                      </div>
+                {midtransReviewNotice && (
+                  <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3.5 py-3 text-[11px] text-amber-900 dark:text-amber-300">
+                    <svg className="w-4 h-4 shrink-0 mt-px text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                    <div><strong className="block font-semibold">{t.midtransReviewNoticeTitle}</strong>{midtransReviewNotice}</div>
+                  </div>
+                )}
 
-                      {manualBankInfo.accountNumber && (
-                        <div className="flex justify-between items-center bg-surface p-3 rounded-xl border border-border">
-                          <div>
-                            <span className="text-foreground/50 block text-[10px] uppercase font-medium">{t.accountNumber}</span>
-                            <span className="font-mono font-bold text-base text-accent tracking-wider">{manualBankInfo.accountNumber}</span>
-                          </div>
+                {project.paymentProofStatus === 'pending' ? (
+                  <div className="rounded-2xl bg-surface-alt/60 border border-border/60 px-5 py-6 text-center animate-in fade-in">
+                    <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-600 rounded-full animate-spin" />
+                    </div>
+                    <h3 className="font-semibold text-sm">{t.awaitingAdminTitle}</h3>
+                    <p className="mt-1 text-xs text-foreground/60 leading-relaxed">{t.awaitingAdminDesc}</p>
+                  </div>
+                ) : project.paymentProofStatus === 'rejected' ? (
+                  <div className="rounded-2xl bg-red-500/5 border border-red-500/25 px-5 py-6 text-center animate-in fade-in">
+                    <div className="mx-auto mb-3 w-11 h-11 rounded-full bg-red-500/10 text-red-600 flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </div>
+                    <h3 className="font-semibold text-sm text-red-700 dark:text-red-400">{t.proofInvalidTitle}</h3>
+                    <p className="mt-1 mb-4 text-xs text-foreground/60 leading-relaxed">{t.proofInvalidDesc}</p>
+                    <button type="button" onClick={handleWhatsAppConfirmAsync} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer">
+                      {waIcon}{t.contactAdminWa}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Pilihan metode */}
+                    {qrisSetup.enabled && (
+                      <div role="tablist" className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-surface-alt border border-border/60 text-xs font-semibold">
+                        {(['qris', 'transfer'] as const).map((m) => (
                           <button
+                            key={m}
                             type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(manualBankInfo.accountNumber);
-                              setCopiedBank(true);
-                              setTimeout(() => setCopiedBank(false), 2000);
-                            }}
-                            className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-semibold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                            role="tab"
+                            aria-selected={method === m}
+                            onClick={() => setPayMethod(m)}
+                            className={`py-2 rounded-lg transition-all cursor-pointer ${method === m ? 'bg-surface text-foreground shadow-sm' : 'text-foreground/50 hover:text-foreground/80'}`}
                           >
-                            {copiedBank ? t.copied : t.copyNo}
+                            {m === 'qris' ? t.methodQris : t.methodTransfer}
                           </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
+                        ))}
+                      </div>
+                    )}
 
-                  {/* Tombol WA Konfirmasi */}
-                  {studioWaUrl ? (
-                    <a 
-                      href={studioWaUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={handleWhatsAppConfirmAsync}
-                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold font-sans text-center transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                      {t.confirmViaWa}
-                    </a>
-                  ) : (
-                    <button 
-                      onClick={handleWhatsAppConfirmAsync}
-                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold font-sans text-center transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
-                    >
-                      {t.confirmViaWa}
-                    </button>
-                  )}
+                    {method === 'qris' ? (
+                      <div className="text-center">
+                        <h3 className="sr-only">{t.qrisTitle}</h3>
+                        <p className="text-[11px] text-foreground/55 leading-snug px-2">{t.qrisDesc(qrisPayment?.merchantName || qrisSetup.merchantName)}</p>
 
-                  {/* Midtrans sebagai metode alternatif saat QRIS menjadi metode utama */}
-                  {qrisSetup.enabled && !snapToken && snapConfig?.clientKey && (
-                    <div className="mt-4 pt-3 border-t border-border/50 text-center">
-                      <button type="button" onClick={generateQris} className="text-xs text-blue-600 hover:text-blue-700 font-medium underline cursor-pointer">
-                        {t.payViaMidtransAlt}
-                      </button>
-                    </div>
-                  )}
+                        {isPaymentLoading && !qrisPayment ? (
+                          <div className="py-12 flex flex-col items-center gap-3 text-xs text-foreground/60">
+                            <div className="w-7 h-7 border-[3px] border-accent/25 border-t-accent rounded-full animate-spin" />
+                            {t.qrisLoading}
+                          </div>
+                        ) : qrisError ? (
+                          <div className="mt-4 rounded-xl bg-red-500/5 border border-red-500/25 px-4 py-4 text-xs text-red-600">
+                            <p className="mb-3">{t.qrisFailed(qrisError)}</p>
+                            <button type="button" onClick={startQrisPayment} className="px-4 py-2 rounded-lg bg-accent text-white font-semibold cursor-pointer">{t.qrisRefresh}</button>
+                          </div>
+                        ) : qrisPayment ? (() => {
+                          const minutesLeft = Math.max(0, Math.ceil((new Date(qrisPayment.expiresAt).getTime() - nowTick) / 60000));
+                          const expired = minutesLeft <= 0;
+                          return (
+                            <>
+                              <div className="relative mx-auto mt-3 w-fit rounded-2xl bg-white p-2.5 shadow-sm ring-1 ring-black/5">
+                                <div className={expired ? 'opacity-15 blur-[1px]' : ''}>
+                                  {qrisPayment.qrString ? (
+                                    <QRCodeSVG id="qris-svg" value={qrisPayment.qrString} size={196} level="M" marginSize={1} />
+                                  ) : qrisPayment.qrUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={qrisPayment.qrUrl} alt="QRIS" width={196} height={196} />
+                                  ) : null}
+                                </div>
+                                {expired && (
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-neutral-700">
+                                    <span className="font-medium">{t.qrisExpired}</span>
+                                    <button type="button" onClick={startQrisPayment} className="px-4 py-2 rounded-lg bg-accent text-white font-semibold cursor-pointer">{t.qrisRefresh}</button>
+                                  </div>
+                                )}
+                              </div>
 
-                  {/* Midtrans Snap Secondary Trigger (tetap ada jika token siap) */}
-                  {snapToken && (
-                    <div className="mt-4 pt-3 border-t border-border/50 text-center">
-                      <button 
-                        type="button"
-                        onClick={() => triggerSnapPayment(snapToken)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium underline cursor-pointer"
-                      >
-                        {t.payViaMidtrans}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                              <p className="mt-3 text-[11px] text-foreground/50">{t.qrisAmountLabel}</p>
+                              <p data-testid="qris-amount" className="font-mono text-2xl font-bold text-accent tracking-wide tabular-nums">{rp(qrisPayment.amount)}</p>
+                              {qrisPayment.uniqueCode > 0 && (
+                                <p className="mt-0.5 text-[11px] text-foreground/55 px-4 leading-snug">{t.qrisUniqueCodeNote(qrisPayment.uniqueCode.toLocaleString('id-ID'))}</p>
+                              )}
 
-              {/* Auto-verification notice */}
-              {qrisString && !isMockPayment && (
-                <div className="flex items-start gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3 mb-5 font-sans">
-                  <svg className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-[11px] text-emerald-700 leading-relaxed">
-                    {t.autoVerificationNotice}
-                  </p>
-                </div>
-              )}
+                              <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                                {!expired && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2.5 py-1.5 text-foreground/60">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    {t.qrisExpiresIn(minutesLeft)}
+                                  </span>
+                                )}
+                                {qrisPayment.qrString ? (
+                                  <button type="button" onClick={downloadQrisImage} className="inline-flex items-center gap-1 rounded-full bg-accent/10 hover:bg-accent/20 px-3 py-1.5 font-semibold text-accent transition-colors cursor-pointer">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    {t.qrisSaveImage}
+                                  </button>
+                                ) : qrisPayment.qrUrl ? (
+                                  <a href={qrisPayment.qrUrl} target="_blank" rel="noopener noreferrer" download className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-3 py-1.5 font-semibold text-accent">{t.qrisSaveImage}</a>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-[10px] text-foreground/45 px-4 leading-snug">{t.qrisSaveHint}</p>
+                              {qrisPayment.checkoutUrl && (
+                                <a href={qrisPayment.checkoutUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-[11px] text-accent underline">{t.qrisOpenCheckout}</a>
+                              )}
 
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3">
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowInvoice(false)}
-                    className="flex-1 py-3 border border-border rounded-xl font-sans font-medium text-sm hover:bg-surface-alt transition-colors cursor-pointer text-foreground/70"
-                  >
-                    {t.closeBtn}
+                              {qrisPayment.autoVerify ? (
+                                <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-[11px] text-emerald-700 dark:text-emerald-400">
+                                  <div className="w-3 h-3 shrink-0 border-2 border-emerald-500/40 border-t-emerald-600 rounded-full animate-spin" />
+                                  {t.qrisWaitingAuto}
+                                </div>
+                              ) : (
+                                <div className="mt-4 space-y-2">
+                                  <p className="text-[11px] text-foreground/60">{t.qrisManualHint}</p>
+                                  {waConfirm(true)}
+                                </div>
+                              )}
+                            </>
+                          );
+                        })() : null}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {!qrisSetup.enabled && (
+                          <div>
+                            <h3 className="font-semibold text-sm">{t.manualTransferTitle}</h3>
+                            <p className="text-[11px] text-foreground/55">{t.manualTransferDesc}</p>
+                          </div>
+                        )}
+                        {manualBankInfo?.bankName || manualBankInfo?.accountNumber ? (
+                          <div className="rounded-2xl border border-border/60 divide-y divide-border/60 text-xs">
+                            <div className="flex items-center justify-between gap-3 px-4 py-3">
+                              <span className="text-foreground/50">{t.bankOrEwallet}</span>
+                              <span className="font-semibold text-right">{manualBankInfo.bankName || 'Bank Transfer'}</span>
+                            </div>
+                            {manualBankInfo.accountName && (
+                              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                                <span className="text-foreground/50">{t.accountName}</span>
+                                <span className="font-medium text-right">{manualBankInfo.accountName}</span>
+                              </div>
+                            )}
+                            {manualBankInfo.accountNumber && (
+                              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                                <div className="min-w-0">
+                                  <span className="block text-foreground/50">{t.accountNumber}</span>
+                                  <span className="font-mono text-base font-bold tracking-wider text-accent break-all">{manualBankInfo.accountNumber}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(manualBankInfo.accountNumber);
+                                    setCopiedBank(true);
+                                    setTimeout(() => setCopiedBank(false), 2000);
+                                  }}
+                                  className="shrink-0 rounded-lg bg-accent/10 hover:bg-accent/20 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors cursor-pointer"
+                                >
+                                  {copiedBank ? t.copied : t.copyNo}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+                        <p className="text-[11px] text-foreground/55 text-center">{t.transferThenConfirm(rp(grandTotal))}</p>
+                        {waConfirm()}
+                      </div>
+                    )}
+
+                    {/* Midtrans sebagai metode alternatif */}
+                    {(snapToken || (qrisSetup.enabled && snapConfig?.clientKey)) && (
+                      <div className="text-center">
+                        <button
+                          type="button"
+                          onClick={handleAltPayment}
+                          className="text-[11px] font-medium text-blue-600 hover:text-blue-700 underline underline-offset-2 cursor-pointer"
+                        >
+                          {snapToken ? t.payViaMidtrans : t.payViaMidtransAlt}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {qrisString && !isMockPayment && (
+                  <div className="flex items-start gap-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 px-3.5 py-2.5">
+                    <svg className="w-4 h-4 shrink-0 mt-px text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <p className="text-[11px] leading-relaxed text-emerald-700 dark:text-emerald-400">{t.autoVerificationNotice}</p>
+                  </div>
+                )}
+
+                {isMockPayment && (
+                  <button type="button" onClick={handlePaymentSuccess} className="w-full py-3 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold cursor-pointer">
+                    {t.simulatedSuccessBtn}
                   </button>
-                  {isMockPayment && (
-                    <button
-                      onClick={handlePaymentSuccess}
-                      className="flex-1 py-3 bg-accent text-white rounded-xl font-medium text-sm hover:bg-accent-dark transition-colors font-sans shadow-md cursor-pointer"
-                    >
-                      {t.simulatedSuccessBtn}
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Price List Modal Overlay */}
       {showPriceList && (
