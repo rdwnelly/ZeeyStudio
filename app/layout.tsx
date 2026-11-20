@@ -13,7 +13,8 @@ export const viewport: Viewport = {
   themeColor: "#0f172a",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  maximumScale: 1, // cegah zoom otomatis iOS saat mengetik di input berfont kecil
+  viewportFit: "cover", // aktifkan env(safe-area-inset-*) untuk notch & home indicator
 };
 
 export const metadata: Metadata = {

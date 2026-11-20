@@ -11,7 +11,7 @@ const PAID = ["Selesai", "File Terkirim"];
 /** Kembalikan himpunan ID foto yang boleh diunduh untuk proyek ini (kosong = tidak boleh). */
 export async function getDownloadablePhotoIds(projectId: string): Promise<Set<string>> {
   const allowed = new Set<string>();
-  if (!projectId) return allowed;
+  if (!projectId || projectId.includes("/") || /^__.*__$/.test(projectId)) return allowed;
   const snap = await adminDb().collection("projects").doc(projectId).get();
   if (!snap.exists) return allowed;
   const p = snap.data() || {};

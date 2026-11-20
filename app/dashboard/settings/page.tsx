@@ -133,7 +133,7 @@ export default function SettingsPage() {
   // --- STATUS INTEGRASI (kunci di variabel lingkungan server) ---
   type IntegrationStatus = {
     midtrans: { configured: boolean; isProduction: boolean; clientKey: string; hasClientKey: boolean; merchantId: string };
-    drive: { configured: boolean; clientEmail: string; error?: string };
+    drive: { configured: boolean; clientEmail: string; error?: string; source?: string };
     qris: { configured: boolean; merchantName: string; merchantCity: string; nmid: string; autoVerify: boolean };
     midtransQris: { enabled: boolean; acquirer: string };
     webhooks: { cashify: boolean };
@@ -1144,7 +1144,9 @@ export default function SettingsPage() {
                 ) : (
                   <>
                     <EnvVarRow name="GOOGLE_SERVICE_ACCOUNT_KEY" ok={integrations.drive.configured}
-                      detail={integrations.drive.configured ? `Service account: ${integrations.drive.clientEmail}` : "Isi JSON service account (atau GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY)"} />
+                      detail={integrations.drive.configured
+                        ? `Service account: ${integrations.drive.clientEmail}${integrations.drive.source === "FIREBASE_SERVICE_ACCOUNT_KEY" ? " (memakai kunci Firebase Admin)" : ""}`
+                        : "Isi JSON service account (atau GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY). Bila kosong, kunci FIREBASE_SERVICE_ACCOUNT_KEY dipakai."} />
                     {integrations.drive.error && (
                       <p className="mt-2 text-xs text-red-600 bg-red-500/10 border border-red-500/30 rounded-xl p-3">⚠️ {integrations.drive.error}</p>
                     )}

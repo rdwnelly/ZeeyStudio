@@ -482,7 +482,7 @@ export default function BookingsPage() {
     const days = [];
     // Empty slots before 1st day
     for (let i = 0; i < firstDayOfMonth; i++) {
-      days.push(<div key={`empty-${i}`} className="p-2 border-r border-b border-border bg-surface-alt/20 min-h-[100px]"></div>);
+      days.push(<div key={`empty-${i}`} className="p-1 md:p-2 border-r border-b border-border bg-surface-alt/20 min-h-[64px] md:min-h-[100px]"></div>);
     }
     
     // Days
@@ -496,20 +496,20 @@ export default function BookingsPage() {
         <div 
           key={d} 
           onClick={() => handleDateClick(dateString)}
-          className={`p-2 border-r border-b ${isToday ? 'bg-accent/5' : 'bg-surface'} min-h-[120px] flex flex-col hover:bg-surface-alt/50 transition-colors cursor-pointer group`}
+          className={`p-1 md:p-2 border-r border-b ${isToday ? 'bg-accent/5' : 'bg-surface'} min-h-[64px] md:min-h-[120px] min-w-0 flex flex-col hover:bg-surface-alt/50 transition-colors cursor-pointer group`}
         >
-          <div className="flex justify-between items-start mb-2">
-            <span className={`text-xs font-medium w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-accent text-white' : 'text-foreground/70 group-hover:bg-foreground/10 transition-colors'}`}>{d}</span>
+          <div className="flex justify-between items-start mb-1 md:mb-2">
+            <span className={`text-[11px] md:text-xs font-medium w-6 h-6 md:w-7 md:h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-accent text-white' : 'text-foreground/70 group-hover:bg-foreground/10 transition-colors'}`}>{d}</span>
           </div>
-          <div className="flex-1 space-y-1.5 overflow-y-auto hide-scrollbar max-h-[90px]">
+          <div className="flex-1 space-y-1 md:space-y-1.5 overflow-y-auto hide-scrollbar max-h-[90px]">
             {dayProjects.map(p => (
               <div 
                 key={p.id} 
                 onClick={(e) => handleEventClick(e, p)}
-                className={`text-[11px] p-1.5 rounded-md truncate border ${getStatusBadge(p.status)} hover:opacity-80 transition-opacity cursor-pointer shadow-sm`} 
+                className={`text-[9px] md:text-[11px] leading-tight px-1 py-0.5 md:p-1.5 rounded md:rounded-md truncate border ${getStatusBadge(p.status)} hover:opacity-80 transition-opacity cursor-pointer shadow-sm`} 
                 title={`${p.shootTime || ''} - ${p.clientName}`}
               >
-                <span className="font-bold">{p.shootTime}</span> {p.clientName}
+                <span className="font-bold hidden md:inline">{p.shootTime} </span>{p.clientName}
               </div>
             ))}
           </div>
@@ -634,11 +634,11 @@ export default function BookingsPage() {
                   </div>
                 </div>
               
-                <div className="overflow-x-auto pb-2 hide-scrollbar">
-                  <div className="min-w-[700px]">
+                <div className="md:overflow-x-auto pb-2 hide-scrollbar">
+                  <div className="md:min-w-[700px]">
                     <div className="grid grid-cols-7 border-t border-l border-border rounded-xl overflow-hidden font-sans">
                       {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                        <div key={day} className="bg-surface-alt py-3 border-r border-b border-border text-center text-xs font-semibold text-foreground/70 uppercase tracking-wider">{day}</div>
+                        <div key={day} className="bg-surface-alt py-2 md:py-3 border-r border-b border-border text-center text-[10px] md:text-xs font-semibold text-foreground/70 uppercase md:tracking-wider">{day}</div>
                       ))}
                       {renderCalendar()}
                     </div>

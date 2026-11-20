@@ -42,8 +42,13 @@ export type ProjectDoc = {
 
 export const DONE_STATUSES = ["Selesai", "File Terkirim"];
 
+/** ID dokumen Firestore yang valid (tanpa "/", bukan "." / "..", bukan pola cadangan __…__). */
+function isValidDocId(id: string): boolean {
+  return !!id && id.length <= 1500 && !id.includes("/") && id !== "." && id !== ".." && !/^__.*__$/.test(id);
+}
+
 export async function loadProject(id: string): Promise<ProjectDoc | null> {
-  if (!id) return null;
+  if (!isValidDocId(id)) return null;
   const snap = await adminDb().collection("projects").doc(id).get();
   return snap.exists ? ({ id: snap.id, ...snap.data() } as ProjectDoc) : null;
 }

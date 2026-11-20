@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "./ThemeProvider";
 import { NotificationProvider } from "./NotificationProvider";
+import BottomNav from "./BottomNav";
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -70,35 +71,48 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
   return (
     <NotificationProvider>
       <div className="flex min-h-screen bg-background text-foreground font-sans selection:bg-accent/30">
-        {/* Mobile Header (Glassmorphism) */}
-        <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60] shadow-sm">
-          <div className="font-bold text-xl font-serif">Zeey Studio</div>
-          <button 
-            onClick={() => setIsOpen(!isOpen)}
-            className="p-2 text-foreground/80 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
-            aria-label="Toggle Menu"
-          >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            {isOpen ? (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-            )}
-          </svg>
-        </button>
-      </div>
+        {/* Mobile Header — ringkas; navigasi utama ada di bilah bawah */}
+        <header className="md:hidden fixed top-0 left-0 right-0 h-12 pt-[env(safe-area-inset-top)] box-content bg-surface/90 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60]">
+          <div className="flex items-center gap-1.5 font-bold text-base text-accent">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
+              <circle cx="12" cy="13" r="3"></circle>
+            </svg>
+            Zeey Studio
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="p-2 text-foreground/70 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
+              aria-label={theme === "dark" ? "Mode terang" : "Mode gelap"}
+            >
+              {theme === "dark" ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+              )}
+            </button>
+            <button
+              onClick={() => setIsOpen(true)}
+              className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center text-accent font-bold text-sm cursor-pointer"
+              aria-label="Profil & menu"
+            >
+              {userName?.charAt(0).toUpperCase() || "U"}
+            </button>
+          </div>
+        </header>
 
       {/* Mobile Backdrop */}
       {isOpen && (
         <div 
-          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-all duration-300"
+          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[65] transition-all duration-300"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar Container */}
       <div className={`
-        fixed md:sticky top-0 left-0 z-50 h-screen w-[280px] bg-surface border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_24px_rgba(0,0,0,0.02)]
+        fixed md:sticky top-0 left-0 z-[70] md:z-50 h-[100dvh] md:h-screen w-[78vw] max-w-[280px] md:w-[280px] md:max-w-none pb-[env(safe-area-inset-bottom)] md:pb-0 bg-surface border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_24px_rgba(0,0,0,0.02)]
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
       `}>
         {/* Brand & User Profile */}
@@ -183,9 +197,12 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 md:pt-0 pt-16 h-screen overflow-y-auto bg-background/50">
+      <main className="flex-1 flex flex-col min-w-0 md:pt-0 pt-[calc(3rem+env(safe-area-inset-top))] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 h-[100dvh] md:h-screen overflow-y-auto overscroll-contain bg-background/50">
         {children}
-      </div>
+      </main>
+
+      {/* Bilah navigasi bawah (HP) */}
+      <BottomNav navItems={navItems} pathname={pathname} isMenuOpen={isOpen} onMenu={() => setIsOpen((v) => !v)} />
     </div>
     </NotificationProvider>
   );

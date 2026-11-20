@@ -42,3 +42,32 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-serif);
 }
+
+/* ── Tampilan ringkas di layar HP (< 768px) ─────────────────────────────────
+   Ukuran dasar diturunkan 16px → 14px. Karena seluruh ukuran Tailwind (font,
+   padding, margin, gap, tinggi) memakai satuan rem, semuanya ikut mengecil
+   ±12,5% secara konsisten. Tampilan tablet/desktop tidak berubah. */
+@media (max-width: 767px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Hilangkan kilatan biru saat elemen diketuk di HP */
+a, button, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Gulir horizontal tanpa scrollbar (kartu ringkasan, tab, kalender) */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

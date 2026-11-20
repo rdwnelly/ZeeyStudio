@@ -7,12 +7,16 @@ const SCOPES = ['https://www.googleapis.com/auth/drive'];
 export type DriveCredentialStatus = {
   credentials: { client_email: string; private_key: string } | null;
   error?: string; // alasan bila variabel ada tetapi tidak bisa dipakai
+  source?: string; // variabel lingkungan yang dipakai
 };
 
 /**
  * Kredensial Service Account Google Drive — HANYA dari variabel lingkungan server:
  *  - GOOGLE_SERVICE_ACCOUNT_KEY  = isi JSON service account, atau
- *  - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY
+ *  - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY, atau
+ *  - (cadangan) FIREBASE_SERVICE_ACCOUNT_KEY — service account Firebase yang sama dapat
+ *    dipakai untuk Drive selama Google Drive API aktif di project-nya dan folder
+ *    "ZeeyStudio" dibagikan ke email service account tersebut.
  * Private key dinormalisasi (baris baru, \n literal, tanda kutip, CRLF) dan divalidasi.
  */
 export function getDriveCredentialStatus(): DriveCredentialStatus {
@@ -35,6 +39,14 @@ export function getDriveCredentialStatus(): DriveCredentialStatus {
     rawKey = process.env.GOOGLE_PRIVATE_KEY;
     source = "GOOGLE_PRIVATE_KEY";
   }
+  if (!rawKey && process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    const parsed = parseServiceAccountJson(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    if (parsed) {
+      email = parsed.client_email;
+      rawKey = parsed.private_key;
+      source = "FIREBASE_SERVICE_ACCOUNT_KEY";
+    }
+  }
   if (!rawKey) return { credentials: null };
 
   const privateKey = normalizePrivateKey(rawKey);
@@ -45,7 +57,7 @@ export function getDriveCredentialStatus(): DriveCredentialStatus {
         "Salin ulang seluruh isi berkas JSON service account Google ke GOOGLE_SERVICE_ACCOUNT_KEY.",
     };
   }
-  return { credentials: { client_email: email, private_key: privateKey } };
+  return { credentials: { client_email: email, private_key: privateKey }, source };
 }
 
 export function getDriveCredentials(): { client_email: string; private_key: string } | null {

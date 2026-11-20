@@ -14,9 +14,24 @@ import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { isUsablePrivateKey, normalizePrivateKey, parseServiceAccountJson } from "./pem";
+import { firebaseWebConfig } from "./firebase-config";
 
-const DEFAULT_PROJECT_ID =
-  process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "zeeystudio-91d12";
+const DEFAULT_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || firebaseWebConfig.projectId;
+
+/**
+ * Kunci Admin harus dari project yang SAMA dengan aplikasi web; jika tidak,
+ * token login dari browser ditolak dan server membaca database yang berbeda.
+ */
+function assertSameProject(keyProjectId: string | undefined) {
+  if (keyProjectId && keyProjectId !== firebaseWebConfig.projectId) {
+    throw new Error(
+      `Project Firebase tidak cocok: kunci Admin milik project "${keyProjectId}", ` +
+        `tetapi aplikasi web memakai project "${firebaseWebConfig.projectId}". ` +
+        `Isi NEXT_PUBLIC_FIREBASE_* untuk project "${keyProjectId}" (Firebase Console → Project settings → ` +
+        `General → Your apps → Web app), atau gunakan kunci service account dari project "${firebaseWebConfig.projectId}".`
+    );
+  }
+}
 
 function cleanKey(key: string): string {
   const pem = normalizePrivateKey(key);
@@ -34,12 +49,17 @@ function initAdminApp(): App {
   if (existing) return existing;
 
   const usingEmulator = !!(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
+  // Emulator diprioritaskan: pengujian lokal tidak pernah memakai kredensial asli
+  if (usingEmulator) {
+    return initializeApp({ projectId: DEFAULT_PROJECT_ID }, "zeey-admin");
+  }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
     const json = parseServiceAccountJson(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
     if (!json) {
       throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY bukan isi JSON service account yang valid (client_email / private_key tidak ditemukan).");
     }
+    assertSameProject(json.project_id);
     return initializeApp(
       {
         credential: cert({
@@ -65,10 +85,6 @@ function initAdminApp(): App {
       },
       "zeey-admin"
     );
-  }
-
-  if (usingEmulator) {
-    return initializeApp({ projectId: DEFAULT_PROJECT_ID }, "zeey-admin");
   }
 
   throw new Error(

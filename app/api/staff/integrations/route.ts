@@ -60,6 +60,7 @@ export async function GET(request: Request) {
       configured: !!drive,
       clientEmail: drive?.client_email || '', // perlu ditampilkan untuk berbagi folder "ZeeyStudio"
       error: driveStatus.error || '',
+      source: driveStatus.source || '',
     },
     qris: {
       configured: !!qris.staticQris,
