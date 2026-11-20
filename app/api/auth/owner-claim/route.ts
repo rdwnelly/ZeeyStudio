@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { adminAuth, ownerEmails } from '@/lib/firebase-admin';
+import { adminAuth, maskEmail, ownerEmails } from '@/lib/firebase-admin';
 
 export const runtime = 'nodejs';
 
@@ -23,8 +23,19 @@ export async function POST(request: Request) {
     const allowed = ownerEmails();
 
     if (!email || !allowed.includes(email)) {
+      // Log tersamar untuk membantu diagnosis di Vercel → Logs
+      console.warn(
+        `[owner-claim] Ditolak: ${maskEmail(email || "(tanpa email)")} tidak ada di OWNER_EMAILS ` +
+          `[${allowed.map(maskEmail).join(", ") || "kosong"}]`
+      );
       return NextResponse.json(
-        { success: false, error: allowed.length === 0 ? 'OWNER_EMAILS belum diatur di server.' : 'Akun ini tidak terdaftar sebagai Owner.' },
+        {
+          success: false,
+          error:
+            allowed.length === 0
+              ? 'OWNER_EMAILS belum diatur di server. Isi di Vercel → Settings → Environment Variables, lalu Redeploy.'
+              : `Akun ${email || "ini"} tidak terdaftar sebagai Owner. Pastikan email ini tercantum persis di OWNER_EMAILS pada server (tanpa tanda kutip), lalu Redeploy.`,
+        },
         { status: 403 }
       );
     }

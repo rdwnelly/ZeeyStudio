@@ -127,8 +127,16 @@ export async function verifyStaff(request: Request, opts: { ownerOnly?: boolean 
 
 /** Daftar email Owner yang diizinkan (variabel OWNER_EMAILS, dipisah koma). */
 export function ownerEmails(): string[] {
+  // Toleran terhadap penulisan di dashboard hosting: tanda kutip, spasi,
+  // baris baru, serta pemisah koma / titik koma / spasi.
   return (process.env.OWNER_EMAILS || "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
+    .split(/[\s,;]+/)
+    .map((e) => e.trim().replace(/^["'`<]+|["'`>]+$/g, "").toLowerCase())
+    .filter((e) => e.includes("@"));
+}
+
+/** Samarkan email untuk log server: "ridwan@gmail.com" → "ri***@gmail.com". */
+export function maskEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  return `${(user || "").slice(0, 2)}***@${domain || ""}`;
 }
