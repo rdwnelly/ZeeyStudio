@@ -183,7 +183,7 @@ export async function getPhotosInFolder(folderId: string) {
       do {
         const res: any = await drive.files.list({
           q: `'${targetId}' in parents and mimeType contains 'image/' and trashed=false`,
-          fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)',
+          fields: 'nextPageToken, files(id, name, size, thumbnailLink, webContentLink)',
           spaces: 'drive',
           pageSize: 1000,
           pageToken: pageToken,

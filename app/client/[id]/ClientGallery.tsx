@@ -266,8 +266,12 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
   // ZIP Download state
   const [isZipping, setIsZipping] = useState(false);
-  const [zipProgress, setZipProgress] = useState(0);
   const [zipStatus, setZipStatus] = useState<'idle' | 'preparing' | 'downloading'>('idle');
+  // Rencana ZIP dari server (dibagi beberapa bagian bila ukurannya besar)
+  type ZipPartInfo = { part: number; count: number; bytes: number; fileName: string; url: string };
+  const [zipParts, setZipParts] = useState<ZipPartInfo[] | null>(null);
+  const [zipError, setZipError] = useState<string | null>(null);
+  const [zipDownloadedParts, setZipDownloadedParts] = useState<number[]>([]);
 
   // Per-foto sequential download queue (lebih andal di HP)
   const [dlQueue, setDlQueue] = useState<{ current: number; total: number } | null>(null);
@@ -966,53 +970,51 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
     saveAs(blob, `Daftar_File_Terpilih_${project.clientName.replace(/\s+/g, '_')}.txt`);
   };
 
+  /** Mulai unduhan lewat pengelola unduhan bawaan browser (andal di Android & iPhone). */
+  const triggerNativeDownload = (url: string, fileName: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const downloadZipPart = (p: ZipPartInfo) => {
+    triggerNativeDownload(p.url, p.fileName);
+    setZipDownloadedParts(prev => (prev.includes(p.part) ? prev : [...prev, p.part]));
+  };
+
+  /**
+   * Unduh foto pilihan sebagai ZIP. Server men-stream ZIP langsung dari Google Drive
+   * (tanpa ditampung di memori HP/server). Bila ukurannya besar, server membaginya
+   * menjadi beberapa bagian agar tiap unduhan selesai walau koneksi HP lambat.
+   */
   const downloadSelectedZip = async () => {
     if (!project) return;
     setIsZipping(true);
     setZipStatus('preparing');
-    setZipProgress(0);
-
+    setZipError(null);
     try {
-      // Dapatkan daftar foto terverifikasi (Firestore → validasi Drive)
-      const photosToDownload = await getVerifiedPhotosToDownload();
-      if (!photosToDownload || photosToDownload.length === 0) {
-        setIsZipping(false);
-        setZipStatus('idle');
-        return;
-      }
-
-      // ── SERVER-SIDE ZIP STREAMING ──
-      // Kita POST daftar foto ke server, server membangun ZIP dan langsung
-      // stream hasilnya ke browser. Browser langsung menampilkan download di
-      // history-nya tanpa harus menunggu semua foto selesai diunduh di sisi klien.
-      setZipStatus('downloading');
-
-      const res = await fetch('/api/drive/download-zip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          photos: photosToDownload,
-          clientName: project.clientName,
-          projectId: project.id,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Server error ${res.status}`);
-      }
-
-      // Stream the response blob and trigger browser save dialog
-      const blob = await res.blob();
-      saveAs(blob, `Foto_${project.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.zip`);
-    } catch (e: any) {
-      console.error('Download ZIP gagal:', e);
-      alert(t.alertZipFailed(e.message || 'Coba lagi.'));
+      const qs = new URLSearchParams({ projectId: project.id, plan: '1' });
+      if (activeSubToken?.id) qs.set('token', activeSubToken.id);
+      const res = await fetch(`/api/client/zip?${qs.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+      const parts: ZipPartInfo[] = data.parts || [];
+      setZipParts(parts);
+      if (parts.length === 1) downloadZipPart(parts[0]);
+    } catch (e) {
+      setZipError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsZipping(false);
       setZipStatus('idle');
     }
   };
+
+  const formatBytes = (b: number) =>
+    b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1024 ** 2))} MB`;
 
   /**
    * Unduh satu foto langsung ke browser download history.
@@ -1129,6 +1131,59 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
 
         <div className="flex flex-col gap-3 mb-6 w-full max-w-sm">
 
+          {/* ── Unduh ZIP langsung ke HP ── */}
+          <button
+            onClick={downloadSelectedZip}
+            disabled={isZipping}
+            className="bg-emerald-600 text-white px-6 py-4 rounded-xl font-semibold hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-lg font-sans flex items-center justify-center gap-2 text-base disabled:opacity-70 cursor-pointer touch-manipulation"
+          >
+            {isZipping ? (
+              <>
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                {t.zipPreparing}
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {t.zipDownloadBtn(confirmedPhotoCount)}
+              </>
+            )}
+          </button>
+
+          {zipError && (
+            <p className="text-xs text-red-600 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-left font-sans">{t.zipFailed(zipError)}</p>
+          )}
+
+          {zipParts && zipParts.length > 1 && (
+            <div className="bg-surface border border-border rounded-xl p-4 text-left font-sans space-y-2">
+              <p className="text-xs text-foreground/70">{t.zipPartsTitle(zipParts.length)}</p>
+              {zipParts.map(p => {
+                const done = zipDownloadedParts.includes(p.part);
+                return (
+                  <button
+                    key={p.part}
+                    onClick={() => downloadZipPart(p)}
+                    className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-lg text-sm font-medium border transition-colors cursor-pointer touch-manipulation ${
+                      done ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700' : 'bg-surface-alt border-border text-foreground hover:border-emerald-500/50'
+                    }`}
+                  >
+                    <span>{t.zipPartBtn(p.part, zipParts.length, p.count, formatBytes(p.bytes))}</span>
+                    <span className="text-xs shrink-0">{done ? t.zipDownloaded : '⬇'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {zipParts && zipDownloadedParts.length > 0 && (
+            <p className="text-[11px] text-foreground/60 font-sans text-center px-2 leading-relaxed">{t.zipStartedHint}</p>
+          )}
+
           {/* Pesan Sabar Saat Proses */}
           {isExporting && (
             <div className="bg-blue-50/80 border border-blue-200 text-blue-800 text-xs px-4 py-3 rounded-xl mb-2 text-center animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm backdrop-blur-sm">
@@ -1191,6 +1246,18 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               )}
             </>
           )}
+
+          {/* Opsi lain: unduh satu per satu (tanpa ZIP) */}
+          <details className="text-left font-sans">
+            <summary className="text-xs text-foreground/60 cursor-pointer text-center py-1">{t.otherDownloadOptions}</summary>
+            <button
+              onClick={downloadPhotosSequentially}
+              disabled={!!dlQueue}
+              className="mt-2 w-full bg-surface-alt border border-border text-foreground px-4 py-3 rounded-lg text-sm font-medium hover:border-accent/50 transition-colors cursor-pointer disabled:opacity-70 touch-manipulation"
+            >
+              {dlQueue ? t.downloadingOneByOne(dlQueue.current, dlQueue.total) : t.downloadOneByOne}
+            </button>
+          </details>
         </div>
       </div>
     );
