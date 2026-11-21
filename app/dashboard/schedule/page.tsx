@@ -7,7 +7,7 @@ export default function SchedulePage() {
     <Sidebar>
       <div className="p-6 md:p-10 max-w-5xl mx-auto w-full">
         <div className="mb-10 border-b border-border pb-6">
-          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Jadwal Pemotretan</h1>
+          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-bold tracking-tight">Jadwal Pemotretan</h1>
           <p className="text-foreground/70 font-sans">Lihat dan kelola jadwal sesi foto studio.</p>
         </div>
         

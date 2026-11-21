@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { BentoCard, Field, Icon, INPUT, PageHeader, StatCard } from "@/components/ui";
+
+const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import {
@@ -32,6 +35,16 @@ type Project = RevenueProject & {
   id: string;
   status: string;
   createdAt: string;
+};
+
+/** Ikon & warna tiap kategori pengeluaran. */
+const KATEGORI: Record<string, { icon: string; tint: string }> = {
+  Operasional: { icon: "M13 10V3L4 14h7v7l9-11h-7z", tint: "bg-amber-500/12 text-amber-600 dark:text-amber-400" },
+  "Sewa Tempat": { icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6", tint: "bg-sky-500/12 text-sky-600 dark:text-sky-400" },
+  "Komisi Tim": { icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z", tint: "bg-violet-500/12 text-violet-600 dark:text-violet-400" },
+  "Perawatan Alat": { icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z", tint: "bg-slate-500/12 text-slate-600 dark:text-slate-300" },
+  Pemasaran: { icon: "M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z", tint: "bg-pink-500/12 text-pink-600 dark:text-pink-400" },
+  Lainnya: { icon: "M4 6h16M4 12h16M4 18h7", tint: "bg-foreground/8 text-foreground/60" },
 };
 
 export default function FinancePage() {
@@ -165,60 +178,64 @@ export default function FinancePage() {
 
   return (
     <Sidebar>
-      <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto w-full pb-24 animate-in fade-in duration-500">
-        <div className="mb-8 border-b border-border/50 pb-6">
-          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Keuangan & Bisnis</h1>
-          <p className="text-foreground/70 font-sans text-sm md:text-base">
-            Pantau arus kas, laba rugi, dan catat pengeluaran operasional studio.
-          </p>
-        </div>
+      <div className="p-3.5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-8">
+        <PageHeader module="finance" title="Keuangan & Bisnis" subtitle="Pantau arus kas, laba rugi, dan catat pengeluaran operasional studio." />
 
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
              <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-5 md:space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-surface border border-border p-6 rounded-2xl shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
-                <h3 className="text-foreground/60 font-medium mb-1 font-sans">Total Pemasukan</h3>
-                <p className="text-3xl font-serif text-green-600">Rp {totalRevenue.toLocaleString("id-ID")}</p>
-              </div>
-              <div className="bg-surface border border-border p-6 rounded-2xl shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
-                <h3 className="text-foreground/60 font-medium mb-1 font-sans">Total Pengeluaran</h3>
-                <p className="text-3xl font-serif text-red-600">Rp {totalExpense.toLocaleString("id-ID")}</p>
-              </div>
-              <div className="bg-surface border border-border p-6 rounded-2xl shadow-sm relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-accent/10 rounded-full blur-3xl -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
-                <h3 className="text-foreground/60 font-medium mb-1 font-sans">Laba Bersih (Net Profit)</h3>
-                <p className="text-3xl font-serif text-accent">Rp {netProfit.toLocaleString("id-ID")}</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 stagger">
+              <StatCard label="Pemasukan" value={totalRevenue} format={rupiah} hint="Total pendapatan" tone="emerald" icon="M7 11l5-5m0 0l5 5m-5-5v12" />
+              <StatCard label="Pengeluaran" value={totalExpense} format={rupiah} hint="Biaya operasional" tone="pink" icon="M17 13l-5 5m0 0l-5-5m5 5V6" />
+              <div className="col-span-2 md:col-span-1">
+                {/* Saat rugi, jangan pakai kartu sorotan — angka merugi tidak boleh tampak seperti pencapaian */}
+                {netProfit >= 0 ? (
+                  <StatCard highlight label="Laba Bersih" value={netProfit} format={rupiah} hint="Pemasukan − pengeluaran" icon="M3 17l6-6 4 4 8-8m0 0v6m0-6h-6" />
+                ) : (
+                  <StatCard
+                    label="Rugi Bersih"
+                    value={Math.abs(netProfit)}
+                    format={(n) => `− ${rupiah(n)}`}
+                    hint="Pengeluaran melebihi pemasukan"
+                    tone="pink"
+                    icon="M3 7l6 6 4-4 8 8m0 0v-6m0 6h-6"
+                  />
+                )}
               </div>
             </div>
 
             {/* Charts */}
             <div className="bg-surface border border-border p-6 rounded-2xl shadow-sm">
-              <h2 className="text-xl font-serif mb-6">Grafik Laba/Rugi Bulanan</h2>
+              <h2 className="text-base md:text-lg font-bold tracking-tight mb-6">Grafik Laba/Rugi Bulanan</h2>
               {chartData.length > 0 ? (
-                <div className="h-80 w-full">
+                <div className="h-64 md:h-80 w-full text-xs">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} />
+                    <BarChart data={chartData} margin={{ top: 10, right: 6, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="finIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" /><stop offset="100%" stopColor="#10b981" /></linearGradient>
+                        <linearGradient id="finOut" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb7185" /><stop offset="100%" stopColor="#ec4899" /></linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--border)" />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'currentColor', opacity: 0.5, fontSize: 11 }} dy={8} />
                       <YAxis 
                         axisLine={false} 
                         tickLine={false} 
-                        tickFormatter={(value) => `Rp${(value/1000000).toFixed(1)}M`} 
+                        width={44}
+                        tick={{ fill: 'currentColor', opacity: 0.5, fontSize: 11 }}
+                        tickFormatter={(value) => `${(value/1000000).toFixed(1)}jt`} 
                       />
                       <Tooltip 
                         formatter={(value) => [`Rp ${Number(value).toLocaleString("id-ID")}`, ""]}
-                        cursor={{fill: 'rgba(0,0,0,0.05)'}}
+                        cursor={{ fill: 'rgba(99,102,241,0.08)', radius: 8 }}
+                        contentStyle={{ borderRadius: 14, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)', fontSize: 12 }}
                       />
                       <Legend iconType="circle" />
-                      <Bar dataKey="Pemasukan" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Pengeluaran" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Pemasukan" fill="url(#finIn)" radius={[8, 8, 8, 8]} maxBarSize={22} animationDuration={1000} />
+                      <Bar dataKey="Pengeluaran" fill="url(#finOut)" radius={[8, 8, 8, 8]} maxBarSize={22} animationDuration={1000} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -229,29 +246,21 @@ export default function FinancePage() {
               )}
             </div>
 
-            {/* Expenses Book */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Add Form */}
-              <div className="lg:col-span-1 bg-surface border border-border p-6 rounded-2xl shadow-sm">
-                <h2 className="text-xl font-serif mb-6 border-b border-border/50 pb-4">Catat Pengeluaran</h2>
-                <form onSubmit={handleAddExpense} className="space-y-4 font-sans">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Tanggal</label>
-                    <input 
-                      type="date" 
-                      required
-                      value={expenseDate}
-                      onChange={e => setExpenseDate(e.target.value)}
-                      className="w-full p-3 border border-border rounded-xl focus:outline-none focus:border-accent bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Kategori</label>
-                    <select 
-                      value={category}
-                      onChange={e => setCategory(e.target.value)}
-                      className="w-full p-3 border border-border rounded-xl focus:outline-none focus:border-accent bg-background"
-                    >
+            {/* ── Catat pengeluaran & buku kas ───────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start stagger">
+              <BentoCard
+                tone="from-pink-500 to-rose-500"
+                glow="shadow-pink-500/30"
+                icon="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
+                title="Catat Pengeluaran"
+                desc="Tambah biaya operasional"
+              >
+                <form onSubmit={handleAddExpense} className="space-y-3.5">
+                  <Field label="Tanggal">
+                    <input type="date" required value={expenseDate} onChange={e => setExpenseDate(e.target.value)} className={INPUT} />
+                  </Field>
+                  <Field label="Kategori">
+                    <select value={category} onChange={e => setCategory(e.target.value)} className={`${INPUT} appearance-none cursor-pointer`}>
                       <option value="Operasional">Operasional (Listrik, Internet, dll)</option>
                       <option value="Sewa Tempat">Sewa Tempat</option>
                       <option value="Komisi Tim">Komisi Tim / Gaji</option>
@@ -259,90 +268,74 @@ export default function FinancePage() {
                       <option value="Pemasaran">Pemasaran & Iklan</option>
                       <option value="Lainnya">Lainnya</option>
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Deskripsi</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="e.g., Bayar Listrik Bulan Juli"
-                      value={description}
-                      onChange={e => setDescription(e.target.value)}
-                      className="w-full p-3 border border-border rounded-xl focus:outline-none focus:border-accent bg-background"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Jumlah (Rp)</label>
-                    <input 
-                      type="number" 
-                      required
-                      placeholder="e.g., 500000"
-                      value={amount}
-                      onChange={e => setAmount(e.target.value)}
-                      className="w-full p-3 border border-border rounded-xl focus:outline-none focus:border-accent bg-background"
-                    />
-                  </div>
-                  <button 
+                  </Field>
+                  <Field label="Deskripsi">
+                    <input type="text" required placeholder="Contoh: Bayar listrik bulan Juli" value={description} onChange={e => setDescription(e.target.value)} className={INPUT} />
+                  </Field>
+                  <Field label="Jumlah (Rp)">
+                    <input type="number" required placeholder="Contoh: 500000" value={amount} onChange={e => setAmount(e.target.value)} className={INPUT} />
+                  </Field>
+                  <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-accent text-white py-3 rounded-xl font-medium hover:bg-accent-dark transition-all cursor-pointer shadow-sm mt-2 disabled:opacity-70"
+                    className="w-full py-3 rounded-2xl bg-brand text-white text-sm font-bold shadow-lg shadow-violet-500/30 transition-all hover:brightness-110 disabled:opacity-70 cursor-pointer press"
                   >
-                    {isSubmitting ? "Menyimpan..." : "Simpan Pengeluaran"}
+                    {isSubmitting ? "Menyimpan…" : "Simpan Pengeluaran"}
                   </button>
                 </form>
-              </div>
+              </BentoCard>
 
-              {/* Expenses List */}
-              <div className="lg:col-span-2 bg-surface border border-border rounded-2xl shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-border/50">
-                  <h2 className="text-xl font-serif">Buku Pengeluaran</h2>
-                </div>
-                <div className="overflow-x-auto flex-1">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-surface-alt border-b border-border text-foreground/70 text-sm font-sans">
-                        <th className="p-4 font-medium whitespace-nowrap">Tanggal</th>
-                        <th className="p-4 font-medium">Kategori</th>
-                        <th className="p-4 font-medium">Deskripsi</th>
-                        <th className="p-4 font-medium">Jumlah</th>
-                        <th className="p-4 font-medium text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-sm font-sans">
-                      {expenses.map((expense) => (
-                        <tr key={expense.id} className="border-b border-border/50 hover:bg-surface-alt/50 transition-colors">
-                          <td className="p-4 text-foreground/70 whitespace-nowrap">
-                            {new Date(expense.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
-                          </td>
-                          <td className="p-4">
-                            <span className="px-2.5 py-1 bg-surface-alt border border-border rounded-lg text-xs font-medium">
-                              {expense.category}
-                            </span>
-                          </td>
-                          <td className="p-4 font-medium text-foreground/80">{expense.description}</td>
-                          <td className="p-4 text-red-600 font-medium whitespace-nowrap">Rp {expense.amount.toLocaleString("id-ID")}</td>
-                          <td className="p-4 text-center">
-                            <button 
-                              onClick={() => handleDeleteExpense(expense.id, expense.description)}
-                              className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                              title="Hapus"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {expenses.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="p-10 text-center text-foreground/50">
-                            Belum ada catatan pengeluaran.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <section className="lg:col-span-2 rounded-3xl bg-surface border border-border/70 shadow-sm p-4 md:p-5">
+                <header className="flex items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 shrink-0">
+                      <Icon d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                    </span>
+                    <div>
+                      <h2 className="text-sm md:text-base font-bold tracking-tight leading-tight">Buku Pengeluaran</h2>
+                      <p className="text-[11px] text-foreground/50 leading-tight">{expenses.length} catatan tersimpan</p>
+                    </div>
+                  </div>
+                  {expenses.length > 0 && (
+                    <span className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 tabular-nums">
+                      {rupiah(totalExpense)}
+                    </span>
+                  )}
+                </header>
+
+                {expenses.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border py-12 text-center text-sm text-foreground/50">
+                    Belum ada catatan pengeluaran.
+                  </div>
+                ) : (
+                  <ul className="space-y-2 max-h-[30rem] overflow-y-auto pr-1 hide-scrollbar">
+                    {expenses.map((expense) => {
+                      const k = KATEGORI[expense.category] || KATEGORI.Lainnya;
+                      return (
+                        <li key={expense.id} className="group flex items-center gap-3 rounded-2xl bg-surface-alt/50 hover:bg-surface-alt px-3 py-2.5 transition-colors">
+                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${k.tint}`}>
+                            <Icon d={k.icon} className="w-4 h-4" strokeWidth={2.2} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold truncate" title={expense.description}>{expense.description}</p>
+                            <p className="text-[11px] text-foreground/50">
+                              {expense.category} · {new Date(expense.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums">−{rupiah(expense.amount)}</span>
+                          <button
+                            onClick={() => handleDeleteExpense(expense.id, expense.description)}
+                            title="Hapus catatan"
+                            className="shrink-0 w-8 h-8 rounded-lg text-foreground/35 hover:text-red-500 hover:bg-red-500/10 transition-colors flex items-center justify-center cursor-pointer"
+                          >
+                            <Icon d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" className="w-4 h-4" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
             </div>
 
           </div>

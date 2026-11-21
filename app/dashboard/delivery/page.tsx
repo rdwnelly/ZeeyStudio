@@ -8,7 +8,7 @@ export default function DeliveryPage() {
     <Sidebar>
       <div className="p-6 md:p-10 max-w-5xl mx-auto w-full">
         <div className="mb-10 border-b border-border pb-6">
-          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Pengiriman Hasil Foto</h1>
+          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-bold tracking-tight">Pengiriman Hasil Foto</h1>
           <p className="text-foreground/70 font-sans">Unggah link Google Drive foto ke klien yang sudah selesai sesi.</p>
         </div>
         

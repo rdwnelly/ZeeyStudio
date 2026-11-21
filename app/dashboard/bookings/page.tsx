@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
+import { Icon, PageHeader, SkeletonBlock, StatCard } from "@/components/ui";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import { authFetch } from "@/lib/auth-client";
 import { normalizeWaNumber } from "@/lib/phone";
-import { collection, getDocs, query, updateDoc, doc } from "firebase/firestore";
+import { collection, query, updateDoc, doc, type QuerySnapshot, type DocumentData } from "firebase/firestore";
+import { getDocsFresh } from "@/lib/firestore-fetch";
 
 import MultiTokenModal, { SubToken } from "@/components/MultiTokenModal";
 import GDriveUploadModal from "@/components/GDriveUploadModal";
@@ -37,6 +39,42 @@ type Project = {
   reopenedAt?: string;
 };
 
+/** Path ikon garis (viewBox 0 0 24 24) yang dipakai halaman ini. */
+const ICON = {
+  calendar: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+  clock: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",
+  check: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+  cash: "M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z",
+  bolt: "M13 10V3L4 14h7v7l9-11h-7z",
+  upload: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12",
+  image: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z",
+  copy: "M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3",
+  edit: "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
+  trash: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16",
+  send: "M12 19l9 2-9-18-9 18 9-2zm0 0v-8",
+  clipboard: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+  left: "M15 19l-7-7 7-7",
+  right: "M9 5l7 7-7 7",
+};
+
+const AVATAR_GRADIENTS = [
+  "from-indigo-500 to-violet-500",
+  "from-pink-500 to-rose-500",
+  "from-sky-500 to-blue-600",
+  "from-emerald-500 to-teal-500",
+  "from-amber-400 to-orange-500",
+  "from-purple-500 to-fuchsia-500",
+];
+
+/** Logo WhatsApp (ikon isi penuh). */
+function WaIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+    </svg>
+  );
+}
+
 export default function BookingsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,6 +100,7 @@ export default function BookingsPage() {
   const [isMultiTokenOpen, setIsMultiTokenOpen] = useState(false);
   const [uploadModalProject, setUploadModalProject] = useState<Project | null>(null);
 
+  const [loadFailed, setLoadFailed] = useState(false);
   const router = useRouter();
 
   const fetchProjects = async () => {
@@ -72,30 +111,39 @@ export default function BookingsPage() {
       setUserRole(role);
       setUserName(name);
 
+      // Ubah hasil kueri menjadi daftar yang siap ditampilkan
+      const terapkan = (snap: QuerySnapshot<DocumentData>) => {
+        const data: Project[] = [];
+        snap.forEach((docSnap) => {
+          const p = { id: docSnap.id, ...docSnap.data() } as Project;
+          // Backward compatibility
+          if (!p.status) p.status = 'Menunggu Pemilihan';
+          if (p.status === 'Selesai') p.status = 'File Terkirim'; // Map old 'Selesai'
+          data.push(p);
+        });
+
+        const terlihat = role === 'admin'
+          ? data.filter(p => p.assignedAdmin === name || p.createdBy === name)
+          : data;
+
+        // Sort list view by shootDate ascending (closest first), fallback to createdAt
+        terlihat.sort((a, b) => {
+          const timeA = a.shootDate ? new Date(a.shootDate).getTime() : new Date(a.createdAt).getTime();
+          const timeB = b.shootDate ? new Date(b.shootDate).getTime() : new Date(b.createdAt).getTime();
+          return timeB - timeA; // default descending
+        });
+
+        setProjects(terlihat);
+      };
+
       const q = query(collection(db, "projects"));
-      const snapshot = await getDocs(q);
-      let data: Project[] = [];
-      
-      snapshot.forEach((doc) => {
-        let p = { id: doc.id, ...doc.data() } as Project;
-        // Backward compatibility
-        if (!p.status) p.status = 'Menunggu Pemilihan';
-        if (p.status === 'Selesai') p.status = 'File Terkirim'; // Map old 'Selesai'
-        data.push(p);
+      // Bila koneksi belum siap, data server menyusul lewat callback di bawah
+      const { snapshot, stale } = await getDocsFresh(q, (fresh) => {
+        terapkan(fresh);
+        setLoadFailed(false);
       });
-
-      if (role === 'admin') {
-        data = data.filter(p => p.assignedAdmin === name || p.createdBy === name);
-      }
-      
-      // Sort list view by shootDate ascending (closest first), fallback to createdAt
-      data.sort((a, b) => {
-        const timeA = a.shootDate ? new Date(a.shootDate).getTime() : new Date(a.createdAt).getTime();
-        const timeB = b.shootDate ? new Date(b.shootDate).getTime() : new Date(b.createdAt).getTime();
-        return timeB - timeA; // default descending
-      });
-
-      setProjects(data);
+      setLoadFailed(stale);
+      terapkan(snapshot);
     } catch (error) {
       console.error("Error fetching projects:", error);
     } finally {
@@ -305,12 +353,12 @@ export default function BookingsPage() {
   // Status Badge Helper
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'Menunggu Pembayaran': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'Lunas': return 'bg-green-100 text-green-700 border-green-200';
-      case 'Selesai Difoto': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'Menunggu Pemilihan': return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'File Terkirim': return 'bg-gray-100 text-gray-700 border-gray-200';
-      default: return 'bg-gray-100 text-gray-700';
+      case 'Menunggu Pembayaran': return 'bg-amber-500/12 text-amber-600 dark:text-amber-400';
+      case 'Lunas': return 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400';
+      case 'Selesai Difoto': return 'bg-sky-500/12 text-sky-600 dark:text-sky-400';
+      case 'Menunggu Pemilihan': return 'bg-violet-500/12 text-violet-600 dark:text-violet-400';
+      case 'File Terkirim': return 'bg-foreground/8 text-foreground/60';
+      default: return 'bg-foreground/8 text-foreground/60';
     }
   };
 
@@ -482,7 +530,7 @@ export default function BookingsPage() {
     const days = [];
     // Empty slots before 1st day
     for (let i = 0; i < firstDayOfMonth; i++) {
-      days.push(<div key={`empty-${i}`} className="p-1 md:p-2 border-r border-b border-border bg-surface-alt/20 min-h-[64px] md:min-h-[100px]"></div>);
+      days.push(<div key={`empty-${i}`} className="rounded-xl bg-surface-alt/25 min-h-[58px] md:min-h-[96px]"></div>);
     }
     
     // Days
@@ -496,17 +544,19 @@ export default function BookingsPage() {
         <div 
           key={d} 
           onClick={() => handleDateClick(dateString)}
-          className={`p-1 md:p-2 border-r border-b ${isToday ? 'bg-accent/5' : 'bg-surface'} min-h-[64px] md:min-h-[120px] min-w-0 flex flex-col hover:bg-surface-alt/50 transition-colors cursor-pointer group`}
+          className={`p-1 md:p-1.5 rounded-xl border min-h-[58px] md:min-h-[108px] min-w-0 flex flex-col transition-all cursor-pointer group ${
+            isToday ? 'border-accent/40 bg-accent/5' : 'border-border/50 bg-surface-alt/25 hover:bg-surface-alt/60 hover:border-border'
+          }`}
         >
           <div className="flex justify-between items-start mb-1 md:mb-2">
-            <span className={`text-[11px] md:text-xs font-medium w-6 h-6 md:w-7 md:h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-accent text-white' : 'text-foreground/70 group-hover:bg-foreground/10 transition-colors'}`}>{d}</span>
+            <span className={`text-[11px] md:text-xs font-semibold w-6 h-6 md:w-7 md:h-7 flex items-center justify-center rounded-full transition-colors ${isToday ? 'bg-brand text-white shadow-md shadow-violet-500/30' : 'text-foreground/60 group-hover:bg-foreground/10'}`}>{d}</span>
           </div>
           <div className="flex-1 space-y-1 md:space-y-1.5 overflow-y-auto hide-scrollbar max-h-[90px]">
             {dayProjects.map(p => (
               <div 
                 key={p.id} 
                 onClick={(e) => handleEventClick(e, p)}
-                className={`text-[9px] md:text-[11px] leading-tight px-1 py-0.5 md:p-1.5 rounded md:rounded-md truncate border ${getStatusBadge(p.status)} hover:opacity-80 transition-opacity cursor-pointer shadow-sm`} 
+                className={`text-[9px] md:text-[11px] leading-tight px-1.5 py-0.5 md:py-1 rounded-lg truncate font-medium ${getStatusBadge(p.status)} hover:brightness-105 transition-all cursor-pointer`} 
                 title={`${p.shootTime || ''} - ${p.clientName}`}
               >
                 <span className="font-bold hidden md:inline">{p.shootTime} </span>{p.clientName}
@@ -521,46 +571,72 @@ export default function BookingsPage() {
     const totalCells = days.length;
     const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     for (let i = 0; i < remaining; i++) {
-       days.push(<div key={`end-empty-${i}`} className="p-2 border-r border-b border-border bg-surface-alt/20 min-h-[100px]"></div>);
+       days.push(<div key={`end-empty-${i}`} className="rounded-xl bg-surface-alt/25 min-h-[58px] md:min-h-[96px]"></div>);
     }
     
     return days;
   };
 
+  // Data untuk kartu ringkasan & kisi kartu
+  const aktifList = projects.filter(p => p.status !== 'File Terkirim');
+  const selesaiList = projects.filter(p => p.status === 'File Terkirim');
+  const pendingCount = projects.filter(p => p.paymentProofStatus === 'pending').length;
+  const sesiBulanIni = projects.filter(p => {
+    if (!p.shootDate) return false;
+    const d = new Date(p.shootDate);
+    return d.getFullYear() === currentDate.getFullYear() && d.getMonth() === currentDate.getMonth();
+  }).length;
+
   return (
     <Sidebar>
-      <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto w-full animate-in fade-in duration-500 pb-24">
-        <div className="mb-6 border-b border-border/50 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Manajemen Pesanan</h1>
-            <p className="text-foreground/70 font-sans text-sm md:text-base mb-6">
-              {userRole === 'owner' ? 'Pantau seluruh jadwal studio dan status pesanan.' : `Jadwal pemotretan yang ditugaskan kepada Anda.`}
-            </p>
-            
-            {/* Tabs dipindah ke atas */}
-            <div className="flex gap-2 bg-surface-alt/50 p-1.5 rounded-xl border border-border w-full md:w-auto inline-flex overflow-x-auto hide-scrollbar">
+      <div className="p-3.5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-8">
+        <PageHeader
+          module="bookings"
+          title="Manajemen Pesanan"
+          subtitle={userRole === 'owner' ? 'Pantau seluruh jadwal studio dan status pesanan.' : 'Jadwal pemotretan yang ditugaskan kepada Anda.'}
+        >
+          <div className="flex gap-2 bg-surface-alt/70 p-1 rounded-2xl border border-border/60 w-full md:w-auto inline-flex overflow-x-auto hide-scrollbar">
               <button 
                 onClick={() => setActiveTab('aktif')}
-                className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'aktif' ? 'bg-background shadow-sm border border-border text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
+                className={`flex-1 md:flex-none px-5 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'aktif' ? 'bg-surface shadow-md border border-transparent text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
               >
                 Pesanan Aktif
               </button>
               <button 
                 onClick={() => setActiveTab('selesai')}
-                className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'selesai' ? 'bg-background shadow-sm border border-border text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
+                className={`flex-1 md:flex-none px-5 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${activeTab === 'selesai' ? 'bg-surface shadow-md border border-transparent text-foreground' : 'text-foreground/60 hover:text-foreground hover:bg-background/50 border border-transparent'}`}
               >
                 Riwayat Selesai
               </button>
             </div>
+        </PageHeader>
+
+        {/* Data gagal dimuat: jangan tampilkan daftar kosong seolah tidak ada pesanan */}
+        {loadFailed && !isLoading && (
+          <div className="mb-4 flex items-start gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-400 animate-in fade-in">
+            <svg className="w-4 h-4 shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div className="flex-1">
+              <strong className="block font-semibold">Gagal memuat data terbaru</strong>
+              Koneksi ke server terputus, jadi daftar di bawah mungkin belum lengkap.
+            </div>
+            <button
+              type="button"
+              onClick={fetchProjects}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 font-semibold transition-colors cursor-pointer"
+            >
+              Coba lagi
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Modal Verifikasi Pembayaran */}
         {verifyingProject && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-surface w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center p-5 md:p-6 border-b border-border bg-surface-alt/30">
-                <h3 className="text-xl font-serif text-foreground">Verifikasi Bukti Pembayaran</h3>
+                <h3 className="text-base md:text-lg font-bold tracking-tight text-foreground">Verifikasi Bukti Pembayaran</h3>
                 <button onClick={() => setVerifyingProject(null)} className="text-foreground/50 hover:text-foreground p-2 rounded-full hover:bg-border transition-colors cursor-pointer">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
@@ -581,7 +657,7 @@ export default function BookingsPage() {
                 
                 <div className="bg-green-50/50 rounded-xl border border-green-200 p-6 flex flex-col items-center justify-center min-h-[150px] text-center">
                   <svg className="w-12 h-12 text-green-500 mb-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                  <h4 className="text-lg font-serif text-green-800 mb-2">Periksa WhatsApp Anda</h4>
+                  <h4 className="text-base font-bold tracking-tight text-green-800 mb-2">Periksa WhatsApp Anda</h4>
                   <p className="text-green-700/80 text-sm mb-2">Apakah Anda sudah menerima bukti transfer yang valid dari klien ini?</p>
                   <span className="text-xs bg-green-200/60 text-green-900 px-3 py-1.5 rounded-lg font-medium">
                     ✨ Klik 'Terima Pembayaran' akan otomatis membuka WhatsApp untuk mengirim link download foto.
@@ -611,318 +687,285 @@ export default function BookingsPage() {
         )}
 
         {isLoading ? (
-          <div className="flex justify-center items-center h-48">
-            <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-24" />)}
+            </div>
+            <SkeletonBlock className="h-72" />
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {[0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-60" />)}
+            </div>
           </div>
         ) : (
-          <div className="space-y-12">
-            
-            {/* Hanya tampilkan Kalender jika tab aktif */}
-            {activeTab === 'aktif' && (
-              <div className="bg-surface border border-border rounded-2xl p-4 md:p-6 shadow-sm overflow-hidden transition-all hover:shadow-md">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-500/10 text-blue-500 p-2.5 rounded-xl hidden sm:block">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    </div>
-                    <h2 className="text-xl md:text-2xl font-serif text-foreground">{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={prevMonth} className="p-2 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer">&larr;</button>
-                    <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 border border-border rounded-xl hover:bg-surface-alt transition-colors text-sm font-medium cursor-pointer">Hari Ini</button>
-                    <button onClick={nextMonth} className="p-2 border border-border rounded-xl hover:bg-surface-alt transition-colors cursor-pointer">&rarr;</button>
-                  </div>
+          <div className="space-y-4 md:space-y-5">
+            {/* ── Ringkasan cepat ─────────────────────────────────────── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger">
+              <StatCard label="Pesanan Aktif" value={aktifList.length} hint="Sedang berjalan" tone="amber" icon={ICON.clock} />
+              <StatCard label="Perlu Verifikasi" value={pendingCount} hint="Konfirmasi transfer" tone="pink" icon={ICON.cash} />
+              <StatCard label="Sesi Bulan Ini" value={sesiBulanIni} hint={`${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`} tone="violet" icon={ICON.calendar} />
+              <StatCard label="Selesai" value={selesaiList.length} hint="File sudah terkirim" tone="emerald" icon={ICON.check} />
+            </div>
+
+            {/* ── Peringatan pembayaran menunggu verifikasi ────────────── */}
+            {activeTab === 'aktif' && pendingCount > 0 && (
+              <div className="flex items-start gap-3 rounded-3xl bg-amber-500/10 border border-amber-500/30 p-4 animate-in fade-in slide-in-from-bottom-2">
+                <span className="w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 shrink-0">
+                  <Icon d={ICON.bolt} className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                </span>
+                <div className="text-xs">
+                  <h4 className="font-bold text-sm text-foreground">{pendingCount} pesanan menunggu verifikasi pembayaran</h4>
+                  <p className="text-foreground/60 leading-snug mt-0.5">
+                    Klien sudah mengirim konfirmasi transfer. Tekan <strong>Setujui</strong> pada kartunya untuk langsung membuka akses galeri.
+                  </p>
                 </div>
-              
-                <div className="md:overflow-x-auto pb-2 hide-scrollbar">
-                  <div className="md:min-w-[700px]">
-                    <div className="grid grid-cols-7 border-t border-l border-border rounded-xl overflow-hidden font-sans">
+              </div>
+            )}
+
+            {/* ── Kalender ────────────────────────────────────────────── */}
+            {activeTab === 'aktif' && (
+              <section className="rounded-3xl bg-surface border border-border/70 shadow-sm p-4 md:p-5 animate-in fade-in slide-in-from-bottom-2">
+                <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-9 h-9 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-500/30 shrink-0">
+                      <Icon d={ICON.calendar} className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                    </span>
+                    <div>
+                      <h2 className="text-sm md:text-base font-bold tracking-tight leading-tight">
+                        {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                      </h2>
+                      <p className="text-[11px] text-foreground/50 leading-tight">Ketuk tanggal untuk membuat booking</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={prevMonth} aria-label="Bulan sebelumnya" className="w-9 h-9 rounded-xl bg-surface-alt/70 hover:bg-surface-alt border border-border/60 flex items-center justify-center transition-colors cursor-pointer press">
+                      <Icon d={ICON.left} className="w-4 h-4" strokeWidth={2.5} />
+                    </button>
+                    <button onClick={() => setCurrentDate(new Date())} className="px-3.5 h-9 rounded-xl bg-surface-alt/70 hover:bg-surface-alt border border-border/60 text-xs font-semibold transition-colors cursor-pointer press">
+                      Hari Ini
+                    </button>
+                    <button onClick={nextMonth} aria-label="Bulan berikutnya" className="w-9 h-9 rounded-xl bg-surface-alt/70 hover:bg-surface-alt border border-border/60 flex items-center justify-center transition-colors cursor-pointer press">
+                      <Icon d={ICON.right} className="w-4 h-4" strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </header>
+
+                <div className="md:overflow-x-auto pb-1 hide-scrollbar">
+                  <div className="md:min-w-[640px]">
+                    <div className="grid grid-cols-7 gap-1 md:gap-1.5">
                       {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(day => (
-                        <div key={day} className="bg-surface-alt py-2 md:py-3 border-r border-b border-border text-center text-[10px] md:text-xs font-semibold text-foreground/70 uppercase md:tracking-wider">{day}</div>
+                        <div key={day} className="py-1.5 text-center text-[10px] font-bold text-foreground/40 uppercase tracking-wider">{day}</div>
                       ))}
                       {renderCalendar()}
                     </div>
                   </div>
                 </div>
-              </div>
+              </section>
             )}
 
-          {/* Daftar Pesanan Aktif */}
-          {activeTab === 'aktif' && (
-          <div className="animate-in fade-in duration-300">
-            {/* Top Alert Bar jika ada pembayaran pending verifikasi */}
-            {projects.some(p => p.paymentProofStatus === 'pending') && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 md:p-5 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans animate-in fade-in">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-500 text-white rounded-full flex items-center justify-center shrink-0 font-bold shadow-sm">
-                    ⚡
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-foreground text-sm">
-                      {projects.filter(p => p.paymentProofStatus === 'pending').length} Pesanan Menunggu Verifikasi Pembayaran
-                    </h4>
-                    <p className="text-xs text-foreground/70">
-                      Klien telah mengirimkan konfirmasi transfer. Klik tombol hijau <strong>"Setujui Pembayaran (1-Klik)"</strong> di bawah untuk membuka akses galeri secara otomatis.
+            {/* ── Kisi kartu pesanan ──────────────────────────────────── */}
+            {(() => {
+              const daftar = activeTab === 'aktif' ? aktifList : selesaiList;
+              if (daftar.length === 0) {
+                return (
+                  <div className="rounded-3xl border border-dashed border-border bg-surface-alt/30 py-14 text-center animate-in fade-in">
+                    <span className="mx-auto mb-3 w-12 h-12 rounded-2xl bg-surface border border-border/60 flex items-center justify-center text-foreground/30">
+                      <Icon d={ICON.clipboard} className="w-6 h-6" />
+                    </span>
+                    <p className="text-sm font-semibold text-foreground/70">
+                      {activeTab === 'aktif' ? 'Belum ada pesanan aktif' : 'Belum ada pesanan selesai'}
                     </p>
+                    {activeTab === 'aktif' && (
+                      <Link href="/dashboard/create" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline">
+                        Buat booking baru
+                        <Icon d={ICON.right} className="w-3.5 h-3.5" strokeWidth={2.5} />
+                      </Link>
+                    )}
                   </div>
-                </div>
-              </div>
-            )}
+                );
+              }
 
-            <div className="space-y-4">
-              {projects.filter(p => p.status !== 'File Terkirim').length === 0 ? (
-                <div className="text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border">
-                  <p className="text-foreground/60">Belum ada pesanan aktif.</p>
-                </div>
-              ) : (
-                projects.filter(p => p.status !== 'File Terkirim').map(project => (
-                <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-start hover:shadow-md hover:border-accent/30 transition-all">
-                  <div className="flex-1 space-y-4 font-sans w-full">
-                    <div className="flex flex-col sm:flex-row justify-between items-start mb-1 w-full gap-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full">
-                        <h3 className="text-xl md:text-2xl font-serif font-medium text-foreground">{project.clientName}</h3>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`text-xs px-3 py-1.5 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
+              return (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 stagger">
+                  {daftar.map((project) => {
+                    const selesai = project.status === 'File Terkirim';
+                    const perluVerifikasi = project.paymentProofStatus === 'pending';
+                    const warna = AVATAR_GRADIENTS[(project.clientName || '?').charCodeAt(0) % AVATAR_GRADIENTS.length];
+                    return (
+                      <article
+                        key={project.id}
+                        className={`relative overflow-hidden rounded-3xl bg-surface border shadow-sm p-4 flex flex-col gap-3 lift ${
+                          perluVerifikasi ? 'border-amber-500/40' : 'border-border/70'
+                        }`}
+                      >
+                        <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${perluVerifikasi ? 'from-amber-400 to-orange-500' : selesai ? 'from-slate-400 to-slate-500' : warna} opacity-80`} />
+
+                        {/* Identitas */}
+                        <header className="flex items-start gap-3 pt-1">
+                          <span className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${warna} text-white font-bold flex items-center justify-center shrink-0 shadow-md`}>
+                            {(project.clientName || '?').charAt(0).toUpperCase()}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-sm leading-tight truncate" title={project.clientName}>{project.clientName}</h3>
+                            <p className="text-[11px] text-foreground/50 leading-tight mt-0.5">
+                              {project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Tanggal belum diatur'}
+                              {project.shootTime ? ` · ${project.shootTime}` : ''}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${getStatusBadge(project.status)}`}>
                             {project.status}
                           </span>
-                          {project.paymentProofStatus === 'pending' && (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs px-3 py-1 rounded-full font-semibold bg-amber-500/10 text-amber-700 border border-amber-500/20 flex items-center gap-1.5 animate-pulse">
-                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
-                                Menunggu Verifikasi
-                              </span>
+                        </header>
+
+                        {/* Detail ringkas */}
+                        <dl className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-2xl bg-surface-alt/60 px-3 py-2 min-w-0">
+                            <dt className="text-foreground/45 font-medium">Paket</dt>
+                            <dd className="font-semibold truncate" title={project.packageName}>{project.packageName || '-'}</dd>
+                          </div>
+                          <div className="rounded-2xl bg-surface-alt/60 px-3 py-2 min-w-0">
+                            <dt className="text-foreground/45 font-medium">Fotografer</dt>
+                            <dd className="font-semibold truncate" title={project.assignedAdmin}>{project.assignedAdmin || '-'}</dd>
+                          </div>
+                        </dl>
+
+                        {/* Menunggu verifikasi pembayaran */}
+                        {perluVerifikasi && (
+                          <div className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-2.5">
+                            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                              Menunggu verifikasi pembayaran
+                            </p>
+                            <div className="mt-2 flex gap-2">
                               <button
                                 onClick={() => handleApprovePayment(project)}
                                 disabled={isVerifying}
-                                className="text-xs px-3 py-1 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all cursor-pointer flex items-center gap-1"
                                 title="Setujui pembayaran dan buka akses galeri foto untuk klien"
+                                className="flex-1 py-2 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 text-white text-[11px] font-bold shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 disabled:opacity-60 cursor-pointer press"
                               >
                                 ✓ Setujui (1-Klik)
                               </button>
                               <button
                                 onClick={() => setVerifyingProject(project)}
-                                className="text-xs px-2.5 py-1 rounded-xl font-medium bg-surface-alt hover:bg-border text-foreground/70 transition-all cursor-pointer"
+                                className="px-3 py-2 rounded-xl bg-surface border border-border/60 text-[11px] font-semibold hover:bg-surface-alt transition-colors cursor-pointer press"
                               >
                                 Detail
                               </button>
                             </div>
+                          </div>
+                        )}
+
+                        {/* Aksi utama */}
+                        <div className="mt-auto space-y-2">
+                          {!selesai ? (
+                            <>
+                              <button
+                                onClick={() => setUploadModalProject(project)}
+                                className="w-full py-2.5 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white text-xs font-bold shadow-md shadow-sky-500/25 transition-all hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer press"
+                              >
+                                <Icon d={ICON.upload} className="w-4 h-4" />
+                                Upload Foto (GDrive)
+                              </button>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                {project.status === 'Menunggu Pembayaran' && userRole === 'owner' && (
+                                  <button onClick={() => updateStatus(project.id, 'Lunas')} className="py-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 text-[11px] font-bold hover:bg-emerald-500/20 transition-colors cursor-pointer press">
+                                    Tandai Lunas
+                                  </button>
+                                )}
+                                {(project.status === 'Menunggu Pemilihan' || project.status === 'Selesai Difoto') && (
+                                  <button onClick={() => updateStatus(project.id, 'File Terkirim')} className="py-2 rounded-xl bg-surface-alt/70 border border-border/60 text-[11px] font-bold hover:bg-surface-alt transition-colors cursor-pointer press">
+                                    Tandai Selesai
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => { setMultiTokenProject(project); setIsMultiTokenOpen(true); }}
+                                  className="py-2 rounded-xl bg-accent/10 text-accent border border-accent/25 text-[11px] font-bold hover:bg-accent/20 transition-colors cursor-pointer press truncate"
+                                >
+                                  {project.subTokens && project.subTokens.length > 0 ? `Sub-Token (${project.subTokens.length})` : 'Bagi Token Link'}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => sendWhatsAppLink(project)}
+                                title="Kirim Link Galeri & Download Foto ke WhatsApp Klien"
+                                className="w-full py-2.5 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer press"
+                              >
+                                <WaIcon />
+                                Kirim Link WA
+                              </button>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => handleDownloadInvoice(project)}
+                                  disabled={isGeneratingPDF}
+                                  className="py-2 rounded-xl bg-surface-alt/70 border border-border/60 text-[11px] font-bold hover:bg-surface-alt transition-colors disabled:opacity-60 cursor-pointer press"
+                                >
+                                  {isGeneratingPDF ? 'Membuat…' : 'Invoice PDF'}
+                                </button>
+                                <button
+                                  onClick={() => handleReopenProject(project)}
+                                  title="Buka kembali sesi pemilihan foto untuk memilih sisa kuota"
+                                  className="py-2 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/25 text-[11px] font-bold hover:bg-amber-500/20 transition-colors cursor-pointer press"
+                                >
+                                  Buka Kembali
+                                </button>
+                              </div>
+                            </>
                           )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex gap-2 shrink-0 sm:ml-4 self-end sm:self-auto">
-                        <Link href={`/dashboard/create?edit=${project.id}`} className="p-2 text-foreground/50 hover:text-blue-600 transition-colors bg-surface-alt rounded-lg border border-border hover:border-blue-300 hover:bg-blue-50" title="Edit Pesanan">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                        </Link>
-                        <button onClick={() => handleDelete(project.id, project.clientName)} className="p-2 text-foreground/50 hover:text-red-600 transition-colors cursor-pointer bg-surface-alt rounded-lg border border-border hover:border-red-300 hover:bg-red-50" title="Hapus Pesanan">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-foreground/80 bg-surface-alt/30 p-4 rounded-xl border border-border/50">
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        </div>
-                        <span className="font-medium">{project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        </div>
-                        <span className="font-medium">{project.shootTime || '-'}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
-                        </div>
-                        <span className="font-medium truncate" title={project.packageName}>{project.packageName || '-'}</span>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                          <svg className="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        </div>
-                        <span className="font-medium">{project.assignedAdmin || '-'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-col gap-3 md:min-w-[240px] border-t md:border-t-0 md:border-l border-border pt-5 md:pt-0 md:pl-6 shrink-0">
-                    {/* Status Actions based on Current Status */}
-                    {project.status === 'Menunggu Pembayaran' && userRole === 'owner' && (
-                      <button onClick={() => updateStatus(project.id, 'Lunas')} className="w-full bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-green-600 transition-colors shadow-sm cursor-pointer">
-                        Tandai Lunas
-                      </button>
-                    )}
-                    
-                    <button 
-                      onClick={() => setUploadModalProject(project)}
-                      className="w-full bg-blue-600 text-white border border-blue-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm cursor-pointer mb-1 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                      Upload Foto (Buka GDrive)
-                    </button>
-                    
-                    {(project.status === 'Menunggu Pemilihan' || project.status === 'Selesai Difoto') && (
-                      <button onClick={() => updateStatus(project.id, 'File Terkirim')} className="w-full bg-foreground text-surface px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-black transition-colors shadow-sm cursor-pointer">
-                        Tandai File Terkirim (Tutup)
-                      </button>
-                    )}
 
-                    <button
-                      onClick={() => {
-                        setMultiTokenProject(project);
-                        setIsMultiTokenOpen(true);
-                      }}
-                      className="w-full bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 px-3 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                      {project.subTokens && project.subTokens.length > 0 ? `Sub-Token (${project.subTokens.length} Link)` : 'Bagi Token Link (Multi-Link)'}
-                    </button>
-                    
-                    <div className="flex gap-2 mt-auto pt-2">
-                      <Link href={`/client/${project.id}`} target="_blank" className="flex-1 text-center bg-surface-alt border border-border px-3 py-2 rounded-lg text-sm font-medium hover:bg-border transition-colors">
-                        Buka Galeri
-                      </Link>
-                      <button 
-                        onClick={() => sendWhatsAppLink(project)}
-                        className="p-2 bg-green-100 text-green-700 border border-green-200 rounded-lg hover:bg-green-200 transition-colors cursor-pointer"
-                        title="Kirim ke WhatsApp Klien"
-                      >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                      </button>
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/client/${project.id}`);
-                          alert("Tautan disalin!");
-                        }}
-                        className="p-2 bg-surface-alt border border-border rounded-lg hover:bg-border transition-colors cursor-pointer"
-                        title="Salin Tautan Klien"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                      </button>
-                    </div>
-                  </div>
+                          {/* Baris ikon */}
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <Link
+                              href={`/client/${project.id}`}
+                              target="_blank"
+                              title="Buka galeri klien"
+                              className="flex-1 h-9 rounded-xl bg-surface-alt/70 border border-border/60 text-[11px] font-semibold hover:bg-surface-alt transition-colors flex items-center justify-center gap-1.5 press"
+                            >
+                              <Icon d={ICON.image} className="w-3.5 h-3.5" />
+                              Galeri
+                            </Link>
+                            {!selesai && (
+                              <button onClick={() => sendWhatsAppLink(project)} title="Kirim ke WhatsApp klien" className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors flex items-center justify-center cursor-pointer press">
+                                <WaIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/client/${project.id}`); alert("Tautan disalin!"); }}
+                              title="Salin tautan klien"
+                              className="w-9 h-9 rounded-xl bg-surface-alt/70 border border-border/60 hover:bg-surface-alt transition-colors flex items-center justify-center cursor-pointer press"
+                            >
+                              <Icon d={ICON.copy} className="w-3.5 h-3.5" />
+                            </button>
+                            {!selesai && (
+                              <>
+                                <Link href={`/dashboard/create?edit=${project.id}`} title="Edit pesanan" className="w-9 h-9 rounded-xl bg-surface-alt/70 border border-border/60 hover:bg-surface-alt hover:text-blue-500 transition-colors flex items-center justify-center press">
+                                  <Icon d={ICON.edit} className="w-3.5 h-3.5" />
+                                </Link>
+                                <button onClick={() => handleDelete(project.id, project.clientName)} title="Hapus pesanan" className="w-9 h-9 rounded-xl bg-surface-alt/70 border border-border/60 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-colors flex items-center justify-center cursor-pointer press">
+                                  <Icon d={ICON.trash} className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                ))
-              )}
-            </div>
+              );
+            })()}
           </div>
-          )}
-
-          {/* Daftar Pesanan Selesai */}
-          {activeTab === 'selesai' && (
-          <div className="animate-in fade-in duration-300">
-            <div className="space-y-4">
-              {projects.filter(p => p.status === 'File Terkirim').length === 0 ? (
-                <div className="text-center p-12 bg-surface-alt/30 rounded-3xl border border-dashed border-border opacity-75">
-                  <p className="text-foreground/60">Belum ada pesanan selesai.</p>
-                </div>
-              ) : (
-                projects.filter(p => p.status === 'File Terkirim').map(project => (
-                  <div key={project.id} className="bg-surface border border-border rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row gap-6 md:items-center hover:border-accent/30 transition-all opacity-80 hover:opacity-100">
-                    <div className="flex-1 space-y-4 font-sans w-full">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full mb-1">
-                        <h3 className="text-xl md:text-2xl font-serif font-medium text-foreground">{project.clientName}</h3>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-3 py-1.5 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(project.status)}`}>
-                            {project.status}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-foreground/70 bg-surface-alt/30 p-4 rounded-xl border border-border/50">
-                        <div className="flex items-center gap-2.5">
-                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                          </div>
-                          <span>{project.shootDate ? new Date(project.shootDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                          </div>
-                          <span>{project.shootTime || '-'}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
-                          </div>
-                          <span className="truncate" title={project.packageName}>{project.packageName || '-'}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="bg-background p-1.5 rounded-md border border-border shadow-sm">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                          </div>
-                          <span>{project.assignedAdmin || '-'}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col gap-3 md:min-w-[240px] border-t md:border-t-0 md:border-l border-border pt-5 md:pt-0 md:pl-6 shrink-0">
-                      <button 
-                        onClick={() => sendWhatsAppLink(project)}
-                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-2"
-                        title="Kirim Link Galeri & Download Foto ke WhatsApp Klien"
-                      >
-                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                        Kirim Link WA Download
-                      </button>
-
-                      <div className="flex gap-2 mt-auto pt-2">
-                        <Link href={`/client/${project.id}`} target="_blank" className="flex-1 text-center bg-surface-alt border border-border px-3 py-2 rounded-lg text-sm font-medium hover:bg-border transition-colors">
-                          Buka Galeri
-                        </Link>
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(`${window.location.origin}/client/${project.id}`);
-                            alert("Tautan disalin!");
-                          }}
-                          className="p-2 bg-surface-alt border border-border rounded-lg hover:bg-border transition-colors cursor-pointer"
-                          title="Salin Tautan Klien"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                        </button>
-                      </div>
-
-                      <button 
-                        onClick={() => handleDownloadInvoice(project)}
-                        disabled={isGeneratingPDF}
-                        className="w-full flex items-center justify-center gap-2 bg-white border border-border text-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-surface-alt transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        {isGeneratingPDF ? "Membuat PDF..." : "Unduh Invoice (PDF)"}
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                      </button>
-                      
-                      <button 
-                        onClick={() => handleReopenProject(project)} 
-                        className="w-full bg-amber-500/10 border border-amber-500/30 text-amber-700 hover:bg-amber-500/20 px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                        title="Buka kembali sesi pemilihan foto untuk memilih sisa kuota"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Buka Kembali (Reopen) Sisa Kuota
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          )}
-        </div>
-      )}
+        )}
 
       {/* Event Detail Modal */}
       {isModalOpen && selectedProject && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setIsModalOpen(false)}>
           <div className="bg-surface w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
-            <div className="p-6 md:p-8 border-b border-border/50 bg-surface-alt/30">
+            <div className="p-4 md:p-6 border-b border-border/50 bg-surface-alt/30">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-2xl font-serif mb-2">{selectedProject.clientName}</h2>
+                  <h2 className="text-lg md:text-xl font-bold tracking-tight mb-2">{selectedProject.clientName}</h2>
                   <span className={`text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${getStatusBadge(selectedProject.status)}`}>
                     {selectedProject.status}
                   </span>
@@ -933,7 +976,7 @@ export default function BookingsPage() {
               </div>
             </div>
             
-            <div className="p-6 md:p-8 space-y-4 font-sans text-sm">
+            <div className="p-4 md:p-6 space-y-4 font-sans text-sm">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-background border border-border p-3 rounded-xl">
                   <p className="text-foreground/50 mb-1 text-xs uppercase tracking-wider font-semibold">Tanggal</p>
@@ -954,7 +997,7 @@ export default function BookingsPage() {
               </div>
             </div>
             
-            <div className="p-6 md:p-8 border-t border-border/50 flex flex-col gap-3">
+            <div className="p-4 md:p-6 border-t border-border/50 flex flex-col gap-3">
               {selectedProject.status === 'Menunggu Pembayaran' && userRole === 'owner' && (
                 <button onClick={() => { updateStatus(selectedProject.id, 'Lunas'); setIsModalOpen(false); }} className="w-full bg-green-500 text-white px-4 py-3.5 rounded-xl text-sm font-medium hover:bg-green-600 transition-colors shadow-sm cursor-pointer">
                   Tandai Lunas

@@ -192,7 +192,7 @@ export default function ActiveProjectsPage() {
         {/* Active Projects Dashboard */}
         <div className="bg-surface border border-border rounded-2xl shadow-md overflow-hidden">
           <div className="p-6 border-b border-border flex justify-between items-center bg-surface-alt/30">
-            <h2 className="text-xl font-serif">Daftar Proyek Aktif</h2>
+            <h2 className="text-base md:text-lg font-bold tracking-tight">Daftar Proyek Aktif</h2>
             <span className="text-sm text-foreground/60 font-sans">Menunggu Pemilihan ({activeProjects.length})</span>
           </div>
           
@@ -306,7 +306,7 @@ export default function ActiveProjectsPage() {
         {/* Completed Projects Dashboard */}
         <div className="bg-surface border border-border rounded-2xl shadow-md overflow-hidden mt-8">
           <div className="p-6 border-b border-border flex justify-between items-center bg-green-50/50">
-            <h2 className="text-xl font-serif text-green-800">Riwayat Proyek Selesai</h2>
+            <h2 className="text-base md:text-lg font-bold tracking-tight text-green-800">Riwayat Proyek Selesai</h2>
             <span className="text-sm text-green-600 font-sans font-medium">Lunas ({completedProjects.length})</span>
           </div>
           

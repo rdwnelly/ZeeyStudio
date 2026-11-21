@@ -54,9 +54,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!ready) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-sm font-sans text-foreground/60">Memverifikasi sesi Anda...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <div className="relative w-14 h-14">
+          <div className="absolute inset-0 rounded-2xl animate-aurora" />
+          <div className="absolute inset-[3px] rounded-[13px] bg-background flex items-center justify-center">
+            <div className="w-6 h-6 border-[3px] border-accent/25 border-t-accent rounded-full animate-spin" />
+          </div>
+        </div>
+        <p className="text-sm font-medium text-foreground/60">Memverifikasi sesi Anda...</p>
       </div>
     );
   }

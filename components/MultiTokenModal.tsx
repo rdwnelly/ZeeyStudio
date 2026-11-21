@@ -170,7 +170,7 @@ export default function MultiTokenModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-surface border border-border rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl space-y-6 relative max-h-[90vh] flex flex-col">
+      <div className="bg-surface border border-border rounded-3xl max-w-2xl w-full p-4 md:p-6 shadow-2xl space-y-6 relative max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex justify-between items-start border-b border-border pb-4">
           <div>
@@ -178,7 +178,7 @@ export default function MultiTokenModal({
               <span className="bg-accent/10 text-accent font-semibold text-xs px-2.5 py-1 rounded-full border border-accent/20">
                 Fitur Multi-Token
               </span>
-              <h2 className="text-xl md:text-2xl font-serif text-foreground">Pembagian Token Link Foto</h2>
+              <h2 className="text-xl md:text-lg md:text-xl font-bold tracking-tight text-foreground">Pembagian Token Link Foto</h2>
             </div>
             <p className="text-sm text-foreground/60 mt-1 font-sans">
               Klien: <strong className="text-foreground">{project.clientName}</strong> &bull; Total Kuota Paket: <strong className="text-accent">{project.maxPhotos} Foto</strong>

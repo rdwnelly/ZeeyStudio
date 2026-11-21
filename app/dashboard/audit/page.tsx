@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { PageHeader } from "@/components/ui";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 
@@ -34,15 +35,8 @@ export default function AuditLogPage() {
 
   return (
     <Sidebar>
-      <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto w-full pb-24 animate-in fade-in duration-500">
-        <div className="mb-8 border-b border-border/50 pb-6 flex justify-between items-end">
-          <div>
-            <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Riwayat Aktivitas Sistem</h1>
-            <p className="text-foreground/70 font-sans text-sm md:text-base">
-              Pantau semua aktivitas yang dilakukan oleh admin dan owner secara real-time.
-            </p>
-          </div>
-        </div>
+      <div className="p-3.5 md:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-8">
+        <PageHeader module="audit" title="Riwayat Aktivitas" subtitle="Pantau semua aktivitas admin dan owner secara real-time." />
 
         <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
           {isAuditLoading ? (

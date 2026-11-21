@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { Icon, PageHeader } from "@/components/ui";
 
 import { db } from "@/lib/firebase";
 import { authFetch } from "@/lib/auth-client";
@@ -11,7 +12,14 @@ import { getQrisInfo } from "@/lib/qris";
 import { collection, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc, setDoc, deleteField } from "firebase/firestore";
 
 export type PriceItem = {
+  /** ID logis item (dipakai perhitungan tagihan, mis. "extra_photo"). */
   id: string;
+  /**
+   * ID dokumen Firestore yang sebenarnya — bisa BERBEDA dari `id` bila dokumen
+   * dibuat dengan addDoc (ID acak) sambil menyimpan field `id` sendiri.
+   * Semua operasi ubah/hapus WAJIB memakai ini, bukan `id`.
+   */
+  docIds?: string[];
   name: string;
   price: number;
   unit: string;
@@ -24,6 +32,17 @@ const DEFAULT_PRICELIST: PriceItem[] = [
   { id: "editor_request", name: "Jasa Editor (Retouch)", price: 100000, unit: "per request", isSystem: true },
   { id: "print_album", name: "Cetak Album 20 Halaman", price: 500000, unit: "per album" },
   { id: "softcopy_all", name: "Softcopy Seluruh Foto (Google Drive)", price: 1500000, unit: "paket" }
+];
+
+/** Menu pengaturan — satu kartu per bagian. */
+const SETTINGS_TABS = [
+  { id: "profil", label: "Profil Studio", desc: "Nama, kontak, lokasi", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4", tone: "from-indigo-500 to-violet-500", tint: "bg-indigo-500/10 text-indigo-500", glow: "shadow-indigo-500/30" },
+  { id: "gdrive", label: "Google Drive", desc: "Penyimpanan foto", icon: "M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10", tone: "from-emerald-500 to-teal-500", tint: "bg-emerald-500/10 text-emerald-500", glow: "shadow-emerald-500/30" },
+  { id: "pembayaran", label: "Metode Pembayaran", desc: "QRIS & transfer", icon: "M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z", tone: "from-pink-500 to-rose-500", tint: "bg-pink-500/10 text-pink-500", glow: "shadow-pink-500/30" },
+  { id: "harga", label: "Daftar Harga", desc: "Paket & layanan", icon: "M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z", tone: "from-amber-400 to-orange-500", tint: "bg-amber-500/10 text-amber-500", glow: "shadow-amber-500/30" },
+  { id: "admin", label: "Akun Admin", desc: "Staf & hak akses", icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z", tone: "from-sky-500 to-blue-600", tint: "bg-sky-500/10 text-sky-500", glow: "shadow-sky-500/30" },
+  { id: "panduan", label: "Panduan & Bantuan", desc: "Cara pakai sistem", icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253", tone: "from-purple-500 to-fuchsia-500", tint: "bg-fuchsia-500/10 text-fuchsia-500", glow: "shadow-fuchsia-500/30" },
+  { id: "lanjutan", label: "Lanjutan (Sistem)", desc: "Sistem & keamanan", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z", tone: "from-slate-500 to-slate-700", tint: "bg-slate-500/10 text-slate-500", glow: "shadow-slate-500/30" },
 ];
 
 export default function SettingsPage() {
@@ -188,30 +207,20 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    // Load Prices from Firestore
+    // Daftar harga dimuat lewat SATU fungsi saja (loadPricesFromDb) supaya setiap
+    // item membawa ID dokumen Firestore-nya. Sebelumnya ada salinan logika di sini
+    // yang tidak menyimpan ID dokumen, sehingga tombol Ubah/Hapus menyasar dokumen
+    // yang salah dan tidak berpengaruh apa-apa.
     const loadPrices = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "pricelist"));
-        if (!querySnapshot.empty) {
-          const pricesMap = new Map<string, PriceItem>();
-          querySnapshot.docs.forEach(d => {
-            const data = d.data();
-            const itemId = data.id || d.id;
-            if (!pricesMap.has(itemId)) {
-              pricesMap.set(itemId, { ...data, id: itemId } as PriceItem);
-            }
-          });
-          const prices = Array.from(pricesMap.values());
-          // Sort system items first
-          prices.sort((a, b) => (a.isSystem === b.isSystem ? 0 : a.isSystem ? -1 : 1));
-          setPriceList(prices);
-        } else {
-          // If empty, initialize with default and save to Firestore
-          setPriceList(DEFAULT_PRICELIST);
+        if (querySnapshot.empty) {
+          // Koleksi masih kosong → isi dengan daftar bawaan
           for (const item of DEFAULT_PRICELIST) {
             await setDoc(doc(db, "pricelist", item.id), item);
           }
         }
+        await loadPricesFromDb();
       } catch (e) {
         console.error("Error loading prices:", e);
       }
@@ -270,8 +279,12 @@ export default function SettingsPage() {
         updateDoc(doc(db, "pricelist", d.id), { isSystem: false }); // Update DB di background
       }
 
-      if (!pricesMap.has(itemId)) {
-        pricesMap.set(itemId, { ...data, id: itemId } as PriceItem);
+      const sudahAda = pricesMap.get(itemId);
+      if (sudahAda) {
+        // Dokumen duplikat dengan ID logis sama — catat agar ikut diubah/dihapus
+        sudahAda.docIds = [...(sudahAda.docIds || []), d.id];
+      } else {
+        pricesMap.set(itemId, { ...data, id: itemId, docIds: [d.id] } as PriceItem);
       }
     });
     const prices = Array.from(pricesMap.values());
@@ -301,14 +314,16 @@ export default function SettingsPage() {
 
     try {
       if (editingItem) {
-        // Update in Firestore. We need the document id.
-        await setDoc(doc(db, "pricelist", editingItem.id), {
+        // Pakai ID dokumen asli. Memakai `id` logis akan membuat dokumen BARU
+        // (duplikat) dan item lama tetap dipakai galeri klien.
+        const target = editingItem.docIds?.length ? editingItem.docIds : [editingItem.id];
+        await Promise.all(target.map((docId) => setDoc(doc(db, "pricelist", docId), {
           name: formData.name,
           price: priceValue,
           unit: formData.unit,
           scheme: formData.scheme,
           isSystem: editingItem.isSystem || false
-        }, { merge: true });
+        }, { merge: true })));
       } else {
         await addDoc(collection(db, "pricelist"), {
           name: formData.name,
@@ -334,7 +349,10 @@ export default function SettingsPage() {
     if (confirm("Apakah Anda yakin ingin menghapus item ini?")) {
       try {
         const item = priceList.find(p => p.id === id);
-        await deleteDoc(doc(db, "pricelist", id));
+        // Hapus berdasarkan ID dokumen asli; `id` logis bisa berbeda sehingga
+        // penghapusan tidak kena sasaran dan item seolah-olah tidak terhapus.
+        const target = item?.docIds?.length ? item.docIds : [id];
+        await Promise.all(target.map((docId) => deleteDoc(doc(db, "pricelist", docId))));
         const { logActivity } = await import("@/lib/audit");
         await logActivity("Harga", `Menghapus item harga ${item?.name}`);
         await loadPricesFromDb();
@@ -556,68 +574,42 @@ export default function SettingsPage() {
 
   return (
     <Sidebar>
-      <div className="p-4 md:p-8 lg:p-10 max-w-5xl mx-auto w-full animate-in fade-in duration-500 pb-24">
-        <div className="mb-8 border-b border-border/50 pb-6">
-          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">Pengaturan Dashboard</h1>
-          <p className="text-foreground/70 font-sans text-sm md:text-base">Kelola profil studio, integrasi pembayaran, dan daftar harga.</p>
+      <div className="p-3.5 md:p-6 lg:p-8 max-w-5xl mx-auto w-full pb-8">
+        <PageHeader module="settings" title="Pengaturan" subtitle="Kelola profil studio, integrasi pembayaran, dan daftar harga." />
+
+        {/* ── Menu pengaturan (kartu) ──────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mb-5 stagger">
+          {SETTINGS_TABS.map((tab) => {
+            const aktif = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                aria-pressed={aktif}
+                className={`group relative overflow-hidden text-left rounded-3xl border p-3.5 transition-all cursor-pointer press ${
+                  aktif ? "bg-surface border-transparent shadow-lg" : "bg-surface/60 border-border/60 hover:bg-surface hover:shadow-md"
+                }`}
+              >
+                {aktif && <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${tab.tone}`} />}
+                <span
+                  className={`mb-2.5 w-9 h-9 rounded-2xl flex items-center justify-center transition-transform duration-300 ${
+                    aktif ? `bg-gradient-to-br ${tab.tone} text-white shadow-lg ${tab.glow}` : `${tab.tint} group-hover:scale-110`
+                  }`}
+                >
+                  <Icon d={tab.icon} className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                </span>
+                <span className={`block text-xs font-bold leading-tight ${aktif ? "text-foreground" : "text-foreground/75"}`}>{tab.label}</span>
+                <span className="block text-[10px] text-foreground/45 leading-tight mt-0.5">{tab.desc}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Custom Tabs */}
-        <div className="flex flex-wrap gap-2 mb-8 border-b border-border/50 pb-1 font-sans overflow-x-auto hide-scrollbar">
-          <button
-            onClick={() => setActiveTab('profil')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'profil' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Profil Studio
-          </button>
-          <button
-            onClick={() => setActiveTab('gdrive')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${activeTab === 'gdrive' ? 'bg-surface border-x border-t border-border border-b-0 text-green-600 font-semibold -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            <span className="w-2 h-2 rounded-full bg-green-500"></span>
-            Google Drive
-          </button>
-          <button
-            onClick={() => setActiveTab('pembayaran')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'pembayaran' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Metode Pembayaran
-          </button>
-          <button
-            onClick={() => setActiveTab('harga')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'harga' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Daftar Harga
-          </button>
-          <button
-            onClick={() => setActiveTab('admin')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'admin' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Akun Admin
-          </button>
-
-          <button
-            onClick={() => setActiveTab('panduan')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'panduan' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Panduan & Bantuan
-          </button>
-          <button
-            onClick={() => setActiveTab('lanjutan')}
-            className={`px-5 md:px-6 py-3 font-medium text-sm rounded-t-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === 'lanjutan' ? 'bg-surface border-x border-t border-border border-b-0 text-accent -mb-[1px] shadow-[0_-4px_6px_-2px_rgba(0,0,0,0.05)]' : 'text-foreground/60 hover:text-foreground hover:bg-surface-alt'}`}
-          >
-            Lanjutan (Sistem)
-          </button>
-
-        </div>
-
-
-
-        {/* Tab Content: Panduan */}
         {activeTab === 'panduan' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
-              <h2 className="text-2xl font-serif mb-6 border-b border-border/50 pb-4">Panduan Penggunaan Google Drive</h2>
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-4 md:p-6">
+              <h2 className="text-lg md:text-xl font-bold tracking-tight mb-6 border-b border-border/50 pb-4">Panduan Penggunaan Google Drive</h2>
 
               <div className="space-y-8 font-sans">
                 {/* Langkah 1 */}
@@ -639,7 +631,7 @@ export default function SettingsPage() {
                     <p className="text-foreground/70 mb-3 text-sm leading-relaxed">
                       Klik kanan pada folder yang baru dibuat, lalu pilih <strong>Bagikan (Share)</strong>. Di bagian "Akses umum" (General access), ubah pilihan "Dibatasi" (Restricted) menjadi <strong>"Siapa saja yang memiliki link" (Anyone with the link)</strong>.
                     </p>
-                    <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl text-xs">
+                    <div className="bg-sky-500/10 border border-sky-500/25 text-sky-600 dark:text-sky-400 p-4 rounded-xl text-xs">
                       <strong>⚠️ PENTING:</strong> Jika langkah ini dilewati, klien tidak akan bisa membuka link foto yang Anda berikan.
                     </div>
                   </div>
@@ -678,14 +670,14 @@ export default function SettingsPage() {
 
         {/* Tab Content: Lanjutan */}
         {activeTab === 'lanjutan' && (
-          <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2">
-            <h2 className="text-xl md:text-2xl font-serif mb-6 border-b border-border/50 pb-4 text-red-600 flex items-center gap-2">
+          <div className="bg-surface border border-border rounded-3xl shadow-sm p-4 md:p-6 animate-in fade-in slide-in-from-bottom-2">
+            <h2 className="text-xl md:text-lg md:text-xl font-bold tracking-tight mb-6 border-b border-border/50 pb-4 text-red-600 flex items-center gap-2">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
               Pengaturan Lanjutan (Zona Berbahaya)
             </h2>
             <div className="space-y-6 max-w-xl font-sans">
-              <div className="border border-red-200 bg-red-50/30 p-5 md:p-6 rounded-2xl">
-                <h3 className="text-lg font-medium text-red-800 mb-2">Reset Data Keuangan & Bisnis</h3>
+              <div className="border border-red-500/25 bg-red-500/10/30 p-5 md:p-6 rounded-2xl">
+                <h3 className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">Reset Data Keuangan & Bisnis</h3>
                 <p className="text-sm text-red-600/80 mb-6 leading-relaxed">
                   Fitur ini digunakan untuk menghapus permanen data pada halaman <strong>Keuangan & Bisnis</strong>.
                   Silakan pilih jenis data yang ingin direset.
@@ -703,15 +695,15 @@ export default function SettingsPage() {
                   <button
                     onClick={() => handleResetFinanceData('all')}
                     disabled={isResettingExpenses || isResettingAll}
-                    className="bg-transparent border border-red-600 text-red-700 px-5 py-3 rounded-xl font-medium hover:bg-red-50 transition-all cursor-pointer shadow-sm text-sm disabled:opacity-70 flex items-center justify-center gap-2 w-full md:w-auto mt-2"
+                    className="bg-transparent border border-red-600 text-red-700 px-5 py-3 rounded-xl font-medium hover:bg-red-500/10 transition-all cursor-pointer shadow-sm text-sm disabled:opacity-70 flex items-center justify-center gap-2 w-full md:w-auto mt-2"
                   >
                     {isResettingAll ? "Menghapus..." : "Reset Semua (Pengeluaran & Data Pesanan/Proyek)"}
                   </button>
                 </div>
               </div>
 
-              <div className="border border-red-200 bg-red-50/30 p-5 md:p-6 rounded-2xl">
-                <h3 className="text-lg font-medium text-red-800 mb-2">Reset Dasbor Analitik (Ringkasan Studio)</h3>
+              <div className="border border-red-500/25 bg-red-500/10/30 p-5 md:p-6 rounded-2xl">
+                <h3 className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">Reset Dasbor Analitik (Ringkasan Studio)</h3>
                 <p className="text-sm text-red-600/80 mb-6 leading-relaxed">
                   Fitur ini akan mereset data metrik kinerja pada Dasbor Utama (Ringkasan Studio).
                   Ini berarti <strong>seluruh data Pesanan/Proyek klien akan dihapus</strong> dari sistem untuk memulai grafik dari angka 0.
@@ -733,7 +725,7 @@ export default function SettingsPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
             <div className="bg-surface border border-border rounded-3xl shadow-sm overflow-hidden">
               <div className="p-5 md:p-8 border-b border-border bg-surface-alt/30">
-                <h2 className="text-xl md:text-2xl font-serif text-foreground">Informasi Studio</h2>
+                <h2 className="text-xl md:text-lg md:text-xl font-bold tracking-tight text-foreground">Informasi Studio</h2>
                 <p className="text-sm text-foreground/60 mt-1">Atur profil dasar, kontak, dan operasional studio Anda.</p>
               </div>
 
@@ -891,7 +883,7 @@ export default function SettingsPage() {
                     Simpan Profil Studio
                   </button>
                   {isProfileSaved && (
-                    <span className="text-green-600 font-medium flex items-center gap-2 animate-in fade-in bg-green-50 px-4 py-2 rounded-lg border border-green-100">
+                    <span className="text-green-600 font-medium flex items-center gap-2 animate-in fade-in bg-emerald-500/10 px-4 py-2 rounded-lg border border-green-100">
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg> 
                       Perubahan Berhasil Disimpan!
                     </span>
@@ -907,12 +899,12 @@ export default function SettingsPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
 
             {/* ── QRIS DANA Bisnis (metode utama) ─────────────────────────────── */}
-            <div className="bg-surface border-2 border-accent/30 rounded-3xl shadow-sm p-6 md:p-8 font-sans">
+            <div className="bg-surface border-2 border-accent/30 rounded-3xl shadow-sm p-4 md:p-6 font-sans">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
                 <div className="bg-accent/10 p-3 rounded-xl text-accent text-2xl leading-none">▦</div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-serif">QRIS DANA Bisnis</h2>
+                    <h2 className="text-lg md:text-xl font-bold tracking-tight">QRIS DANA Bisnis</h2>
                     <span className="bg-accent/10 text-accent text-xs font-bold px-2.5 py-1 rounded-full">Utama</span>
                   </div>
                   <p className="text-foreground/60 text-sm">
@@ -923,7 +915,7 @@ export default function SettingsPage() {
               </div>
 
               {qrisSavedInfo?.valid ? (
-                <div className="mb-5 p-4 rounded-2xl bg-green-500/10 border border-green-500/30 text-sm">
+                <div className="mb-5 p-4 rounded-2xl bg-emerald-500/100/10 border border-green-500/30 text-sm">
                   <p className="font-semibold text-green-700">✓ QRIS aktif: {qrisSavedInfo.merchantName}</p>
                   <p className="text-xs text-foreground/60 mt-1">
                     {qrisSavedInfo.merchantCity}{qrisSavedInfo.nmid ? ` · NMID ${qrisSavedInfo.nmid}` : ""} · {qrisSavedInfo.isStatic ? "QR statis" : "QR dinamis"}
@@ -987,17 +979,17 @@ export default function SettingsPage() {
             </div>
 
             {/* ── Midtrans Snap Integration Card ─────────────────────────────── */}
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-4 md:p-6">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-                <div className="bg-blue-500/10 p-3 rounded-xl text-blue-600">
+                <div className="bg-sky-500/100/10 p-3 rounded-xl text-blue-600">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
                   </svg>
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-serif">Midtrans Snap (metode lain)</h2>
-                    <span className="inline-flex items-center gap-1 bg-blue-500/10 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                    <h2 className="text-lg md:text-xl font-bold tracking-tight">Midtrans Snap (metode lain)</h2>
+                    <span className="inline-flex items-center gap-1 bg-sky-500/100/10 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
                       Opsional
                     </span>
                   </div>
@@ -1039,7 +1031,7 @@ export default function SettingsPage() {
             )}
 
             {/* ── Metode Transfer Manual Card ─────────────────────────────── */}
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-4 md:p-6">
               <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
                 <div className="bg-accent/10 p-3 rounded-xl text-accent">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1047,7 +1039,7 @@ export default function SettingsPage() {
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-serif">Metode Transfer Manual (Alternatif)</h2>
+                  <h2 className="text-lg md:text-xl font-bold tracking-tight">Metode Transfer Manual (Alternatif)</h2>
                   <p className="text-foreground/60 font-sans text-sm">
                     Klien dapat mentransfer pembayaran secara manual jika memilih opsi konfirmasi via WhatsApp.
                   </p>
@@ -1113,18 +1105,18 @@ export default function SettingsPage() {
         {/* Tab Content: Google Drive */}
         {activeTab === 'gdrive' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-            <div className="bg-surface border border-border rounded-3xl shadow-sm p-6 md:p-8">
+            <div className="bg-surface border border-border rounded-3xl shadow-sm p-4 md:p-6">
               <div className="flex items-start justify-between gap-4 mb-6 pb-6 border-b border-border">
                 <div className="flex items-start gap-4">
-                  <div className="bg-green-500/10 p-3 rounded-xl text-green-600">
+                  <div className="bg-emerald-500/100/10 p-3 rounded-xl text-green-600">
                     <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M7.71 3.5L1.15 15l3.43 6 6.55-11.5M9.73 3.5h13.12l-3.43 6H6.3M13.44 10L6.89 21h13.11l6.55-11.5" />
                     </svg>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <h2 className="text-2xl font-serif">Kredensial Google Drive Service Account</h2>
-                      <span className="inline-flex items-center gap-1 bg-green-500/10 text-green-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                      <h2 className="text-lg md:text-xl font-bold tracking-tight">Kredensial Google Drive Service Account</h2>
+                      <span className="inline-flex items-center gap-1 bg-emerald-500/100/10 text-green-600 text-xs font-bold px-2.5 py-1 rounded-full">
                         Cloud Storage
                       </span>
                     </div>
@@ -1148,7 +1140,7 @@ export default function SettingsPage() {
                         ? `Service account: ${integrations.drive.clientEmail}${integrations.drive.source === "FIREBASE_SERVICE_ACCOUNT_KEY" ? " (memakai kunci Firebase Admin)" : ""}`
                         : "Isi JSON service account (atau GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY). Bila kosong, kunci FIREBASE_SERVICE_ACCOUNT_KEY dipakai."} />
                     {integrations.drive.error && (
-                      <p className="mt-2 text-xs text-red-600 bg-red-500/10 border border-red-500/30 rounded-xl p-3">⚠️ {integrations.drive.error}</p>
+                      <p className="mt-2 text-xs text-red-600 bg-red-500/100/10 border border-red-500/30 rounded-xl p-3">⚠️ {integrations.drive.error}</p>
                     )}
                   </>
                 )}
@@ -1194,7 +1186,7 @@ export default function SettingsPage() {
           <div className="bg-surface border border-border rounded-3xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
             <div className="p-5 md:p-6 border-b border-border bg-surface-alt/30 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h2 className="text-xl font-serif">Daftar Harga (Price List)</h2>
+                <h2 className="text-base md:text-lg font-bold tracking-tight">Daftar Harga (Price List)</h2>
                 <p className="text-sm text-foreground/60 mt-1">Daftar ini ditampilkan kepada klien di Galeri.</p>
               </div>
               <button
@@ -1255,7 +1247,7 @@ export default function SettingsPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
             <div className="bg-surface border border-border rounded-3xl shadow-sm overflow-hidden">
               <div className="p-5 md:p-6 border-b border-border bg-surface-alt/30">
-                <h2 className="text-xl font-serif">Daftar Akun Admin</h2>
+                <h2 className="text-base md:text-lg font-bold tracking-tight">Daftar Akun Admin</h2>
                 <p className="text-sm text-foreground/60 mt-1">Kelola akses portal admin untuk tim Anda.</p>
               </div>
 
@@ -1355,7 +1347,7 @@ export default function SettingsPage() {
                     <div key={adm.id} className="bg-background border border-border rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-accent/30 transition-all flex flex-col group relative">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1 pr-3">
-                          <h4 className="font-serif text-lg font-medium text-foreground leading-tight">{adm.name}</h4>
+                          <h4 className="font-bold tracking-tight text-lg font-medium text-foreground leading-tight">{adm.name}</h4>
                           <span className="text-xs text-foreground/50 font-sans mt-1 block">@{adm.username} • {adm.specialization || "Admin"}</span>
                         </div>
                         {adm.employmentStatus && (
@@ -1405,7 +1397,7 @@ export default function SettingsPage() {
                         <button onClick={() => handleEditAdmin(adm)} className="flex-1 py-2.5 bg-surface hover:bg-surface-alt border border-border text-foreground text-sm font-medium rounded-xl transition-all cursor-pointer">
                           Edit
                         </button>
-                        <button onClick={() => handleDeleteAdmin(adm.id)} className="flex-1 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-xl transition-all cursor-pointer border border-red-100">
+                        <button onClick={() => handleDeleteAdmin(adm.id)} className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500/15 text-red-600 text-sm font-medium rounded-xl transition-all cursor-pointer border border-red-100">
                           Hapus
                         </button>
                       </div>
@@ -1428,8 +1420,8 @@ export default function SettingsPage() {
       {isModalOpen && activeTab === 'harga' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-6 md:p-8">
-              <h2 className="text-xl md:text-2xl font-serif mb-6">{editingItem ? "Edit Harga" : "Tambah Harga Baru"}</h2>
+            <div className="p-4 md:p-6">
+              <h2 className="text-xl md:text-lg md:text-xl font-bold tracking-tight mb-6">{editingItem ? "Edit Harga" : "Tambah Harga Baru"}</h2>
               <form onSubmit={handlePriceSubmit} className="space-y-5 font-sans">
                 <div>
                   <label className="block text-sm font-medium mb-2">Nama Layanan</label>

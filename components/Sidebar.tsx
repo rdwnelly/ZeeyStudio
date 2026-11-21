@@ -1,61 +1,106 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "./ThemeProvider";
 import { NotificationProvider } from "./NotificationProvider";
 import BottomNav from "./BottomNav";
+import { Icon } from "./ui";
+import { clearFirebaseBrowserState } from "@/lib/auth-client";
+import { NAV_MODULES, isActivePath, moduleForPath, type NavModule } from "@/lib/nav-modules";
+
+/**
+ * Kerangka dasbor (sidebar desktop, header & bilah bawah HP).
+ *
+ * Dipasang SEKALI di app/dashboard/layout.tsx sehingga tetap ada saat berpindah menu —
+ * tidak berkedip/memuat ulang, hanya isi halaman yang berganti dengan animasi.
+ * Halaman yang masih membungkus dirinya dengan <Sidebar> otomatis menjadi "tembus"
+ * (tidak membuat kerangka kedua).
+ */
+const ShellContext = createContext(false);
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
+  const insideShell = useContext(ShellContext);
+  if (insideShell) return <>{children}</>;
+  return (
+    <ShellContext.Provider value={true}>
+      <DashboardShell>{children}</DashboardShell>
+    </ShellContext.Provider>
+  );
+}
+
+const SUN = "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z";
+const MOON = "M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z";
+const LOGOUT = "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1";
+
+function readSession() {
+  if (typeof window === "undefined") return { role: null as string | null, name: "", accesses: [] as string[] };
+  const role = localStorage.getItem("zeey_auth_role");
+  const name = localStorage.getItem("zeey_auth_user") || (role === "owner" ? "Super Admin" : "Admin");
+  let accesses: string[] = [];
+  try {
+    accesses = JSON.parse(localStorage.getItem("zeey_auth_access") || "[]");
+  } catch {
+    accesses = [];
+  }
+  return { role, name, accesses };
+}
+
+function BrandMark({ small = false }: { small?: boolean }) {
+  return (
+    <span className={`${small ? "w-7 h-7 rounded-lg" : "w-9 h-9 rounded-xl"} bg-brand text-white flex items-center justify-center shadow-lg shadow-violet-500/30 shrink-0`}>
+      <svg className={small ? "w-4 h-4" : "w-5 h-5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+        <circle cx="12" cy="13" r="3" />
+      </svg>
+    </span>
+  );
+}
+
+function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
+  return (
+    <span className={`${size === "sm" ? "w-8 h-8 text-xs" : "w-9 h-9 text-sm"} rounded-full bg-gradient-to-br from-amber-400 via-pink-500 to-violet-500 text-white font-bold flex items-center justify-center ring-2 ring-surface shrink-0`}>
+      {name.charAt(0).toUpperCase() || "U"}
+    </span>
+  );
+}
+
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [role, setRole] = useState<string | null>(null);
-  const [userName, setUserName] = useState<string | null>(null);
-  const [userAccesses, setUserAccesses] = useState<string[]>([]);
+  // Sesi dibaca di efek (BUKAN saat render): localStorage tidak ada di server,
+  // membacanya saat render membuat hasil server ≠ klien (hydration mismatch).
+  const [session, setSession] = useState<ReturnType<typeof readSession> | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const authRole = localStorage.getItem("zeey_auth_role");
-    const authUser = localStorage.getItem("zeey_auth_user");
-    const authAccessStr = localStorage.getItem("zeey_auth_access");
-    if (!authRole) {
-      router.push("/");
-    } else {
-      setRole(authRole);
-      setUserName(authUser || (authRole === "owner" ? "Super Admin" : "Admin"));
-      if (authAccessStr) {
-        try {
-          setUserAccesses(JSON.parse(authAccessStr));
-        } catch (e) {
-          setUserAccesses([]);
-        }
-      }
-    }
+    const s = readSession();
+    if (!s.role) router.push("/");
+    else setSession(s);
   }, [router]);
 
-  if (!role) {
+  // Kembali ke atas setiap pindah halaman (kerangka tetap, area isi yang digulir)
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+    setIsOpen(false);
+  }, [pathname]);
+
+  if (!session?.role) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-sm font-sans text-foreground/60">Memuat sesi Anda...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-4 border-accent/25 border-t-accent rounded-full animate-spin" />
+        <p className="mt-4 text-sm text-foreground/60">Memuat sesi Anda...</p>
       </div>
     );
   }
 
-  const ALL_MODULES = [
-    { id: "dashboard", name: "Dasbor Utama", href: "/dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
-    { id: "create", name: "Buat Project Baru", href: "/dashboard/create", icon: "M12 6v6m0 0v6m0-6h6m-6 0H6" },
-    { id: "bookings", name: "Daftar Pesanan", href: "/dashboard/bookings", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
-    { id: "editor", name: "Tugas Editor", href: "/dashboard/editor", icon: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" },
-    { id: "finance", name: "Keuangan & Bisnis", href: "/dashboard/finance", icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
-    { id: "crm", name: "Data Klien (CRM)", href: "/dashboard/crm", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
-    { id: "audit", name: "Riwayat Aktivitas", href: "/dashboard/audit", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
-    { id: "settings", name: "Pengaturan", href: "/dashboard/settings", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
-  ];
-
-  const navItems = role === "owner" ? ALL_MODULES : ALL_MODULES.filter(item => item.id === "dashboard" || userAccesses.includes(item.id));
+  const role = session.role;
+  const userName = session.name;
+  const navItems: NavModule[] = role === "owner" ? NAV_MODULES : NAV_MODULES.filter((m) => m.id === "dashboard" || session.accesses.includes(m.id));
+  const current = moduleForPath(pathname);
 
   const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -65,145 +110,131 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
     // Akhiri sesi Firebase agar akses Firestore ikut tertutup
     const [{ auth }, { signOut }] = await Promise.all([import("@/lib/firebase"), import("firebase/auth")]);
     await signOut(auth).catch(() => {});
+    // Bersihkan sisa sesi di browser agar akun berikutnya tidak mewarisi
+    // keadaan yang membuat koneksi Firestore gagal
+    await clearFirebaseBrowserState();
     router.push("/");
   };
 
   return (
-    <NotificationProvider>
-      <div className="flex min-h-screen bg-background text-foreground font-sans selection:bg-accent/30">
-        {/* Mobile Header — ringkas; navigasi utama ada di bilah bawah */}
-        <header className="md:hidden fixed top-0 left-0 right-0 h-12 pt-[env(safe-area-inset-top)] box-content bg-surface/90 backdrop-blur-md border-b border-border flex items-center justify-between px-4 z-[60]">
-          <div className="flex items-center gap-1.5 font-bold text-base text-accent">
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
-              <circle cx="12" cy="13" r="3"></circle>
-            </svg>
-            Zeey Studio
+    <NotificationProvider enabled={pathname === "/dashboard"}>
+      <div className="flex min-h-screen text-foreground font-sans">
+        {/* Header HP — kaca buram, judul halaman aktif */}
+        <header className="md:hidden fixed top-0 inset-x-0 h-12 pt-[env(safe-area-inset-top)] box-content bg-surface/75 backdrop-blur-xl border-b border-border/60 flex items-center justify-between px-3.5 z-[60]">
+          <div className="flex items-center gap-2 min-w-0">
+            <BrandMark small />
+            <div className="min-w-0 leading-tight">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground/45">Zeey Studio</p>
+              <p className="text-sm font-bold truncate">{current?.name || "Dasbor"}</p>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={toggleTheme}
-              className="p-2 text-foreground/70 hover:text-accent transition-colors cursor-pointer rounded-full hover:bg-accent/10"
+              className="w-9 h-9 flex items-center justify-center text-foreground/70 hover:text-accent rounded-full hover:bg-accent/10 transition-colors cursor-pointer press"
               aria-label={theme === "dark" ? "Mode terang" : "Mode gelap"}
             >
-              {theme === "dark" ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-              )}
+              <Icon d={theme === "dark" ? SUN : MOON} />
             </button>
-            <button
-              onClick={() => setIsOpen(true)}
-              className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center text-accent font-bold text-sm cursor-pointer"
-              aria-label="Profil & menu"
-            >
-              {userName?.charAt(0).toUpperCase() || "U"}
+            <button onClick={() => setIsOpen(true)} className="cursor-pointer press" aria-label="Profil & menu">
+              <Avatar name={userName} size="sm" />
             </button>
           </div>
         </header>
 
-      {/* Mobile Backdrop */}
-      {isOpen && (
-        <div 
-          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[65] transition-all duration-300"
+        {/* Latar laci HP */}
+        <div
+          className={`md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[65] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           onClick={() => setIsOpen(false)}
         />
-      )}
 
-      {/* Sidebar Container */}
-      <div className={`
-        fixed md:sticky top-0 left-0 z-[70] md:z-50 h-[100dvh] md:h-screen w-[78vw] max-w-[280px] md:w-[280px] md:max-w-none pb-[env(safe-area-inset-bottom)] md:pb-0 bg-surface border-r border-border flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[4px_0_24px_rgba(0,0,0,0.02)]
-        ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-      `}>
-        {/* Brand & User Profile */}
-        <div className="flex flex-col justify-center px-6 pt-8 pb-6 border-b border-border/50">
-          <div className="font-bold text-2xl font-serif text-accent mb-6 flex items-center gap-2">
-            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
-              <circle cx="12" cy="13" r="3"></circle>
-            </svg>
-            Zeey Studio
-          </div>
-          <div className="bg-background rounded-xl p-4 border border-border shadow-sm flex items-center gap-3">
-            <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center text-accent font-bold text-lg">
-              {userName?.charAt(0).toUpperCase() || 'U'}
-            </div>
-            <div className="overflow-hidden">
-              <p className="text-sm font-semibold truncate text-foreground">{userName}</p>
-              <p className="text-xs text-foreground/50 uppercase tracking-widest font-medium mt-0.5">{role}</p>
+        {/* Sidebar */}
+        <aside
+          className={`fixed md:sticky top-0 left-0 z-[70] md:z-50 h-[100dvh] md:h-screen w-[78vw] max-w-[280px] md:w-[248px] lg:w-[264px] md:max-w-none pb-[env(safe-area-inset-bottom)] md:pb-0
+            bg-surface/90 md:bg-surface/70 backdrop-blur-xl border-r border-border/60 flex flex-col
+            transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"}`}
+        >
+          {/* Merek */}
+          <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
+            <BrandMark />
+            <div className="leading-tight">
+              <p className="font-extrabold text-lg tracking-tight">
+                Zeey <span className="text-brand">Studio</span>
+              </p>
+              <p className="text-[10px] font-medium uppercase tracking-widest text-foreground/40">Studio Manager</p>
             </div>
           </div>
-        </div>
-        
-        {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto hide-scrollbar">
-          <div className="px-3 mb-2 text-xs font-semibold text-foreground/40 uppercase tracking-widest">Menu Utama</div>
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-            const isReallyActive = item.href === "/dashboard" ? pathname === "/dashboard" : isActive;
-            
-            return (
-              <Link 
-                key={item.name} 
-                href={item.href}
-                onClick={() => setIsOpen(false)}
-                className={`
-                  flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 group relative
-                  ${isReallyActive 
-                    ? "text-accent bg-accent/10" 
-                    : "text-foreground/70 hover:bg-surface-alt hover:text-foreground"}
-                `}
+
+          {/* Navigasi */}
+          <nav className="flex-1 px-3 pb-4 space-y-1 overflow-y-auto hide-scrollbar">
+            <p className="px-3 pt-1 pb-2 text-[10px] font-semibold text-foreground/40 uppercase tracking-widest">Menu</p>
+            {navItems.map((item) => {
+              const active = isActivePath(pathname, item.href);
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className={`group relative flex items-center gap-3 px-2.5 py-2 rounded-2xl text-sm transition-all duration-200 ${
+                    active ? "bg-surface shadow-md font-semibold text-foreground" : "text-foreground/65 hover:text-foreground hover:bg-surface-alt/80 font-medium"
+                  }`}
+                >
+                  <span
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 ${
+                      active ? `${item.gradient} text-white shadow-lg ${item.glow} scale-105` : `${item.tint} group-hover:scale-110`
+                    }`}
+                  >
+                    <Icon d={item.icon} className="w-4 h-4" strokeWidth={2.2} />
+                  </span>
+                  <span className="truncate">{item.name}</span>
+                  {active && <span className={`ml-auto w-1.5 h-1.5 rounded-full ${item.gradient}`} />}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Profil & aksi */}
+          <div className="p-3 border-t border-border/60">
+            <div className="flex items-center gap-2.5 p-2 rounded-2xl bg-surface-alt/70">
+              <Avatar name={userName} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">{userName}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">{role}</p>
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-foreground/55 hover:text-accent hover:bg-surface transition-colors cursor-pointer press"
+                aria-label={theme === "dark" ? "Mode terang" : "Mode gelap"}
+                title={theme === "dark" ? "Mode Terang" : "Mode Gelap"}
               >
-                {isReallyActive && (
-                  <span className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-accent rounded-r-full" />
-                )}
-                <svg className={`w-5 h-5 mr-3 transition-colors ${isReallyActive ? "text-accent" : "text-foreground/40 group-hover:text-foreground/70"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={item.icon} />
-                </svg>
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
-        
-        {/* Theme Toggle & Logout */}
-        <div className="p-4 border-t border-border/50 flex flex-col gap-2">
-          <button 
-            onClick={toggleTheme}
-            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-surface-alt hover:text-foreground transition-all cursor-pointer group"
-          >
-            {theme === 'dark' ? (
-              <>
-                <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-foreground transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                Mode Terang
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-foreground transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
-                Mode Gelap
-              </>
-            )}
-          </button>
-          <button 
-            onClick={handleLogout}
-            className="flex w-full items-center px-4 py-3 text-sm font-medium text-foreground/60 rounded-xl hover:bg-red-500/10 hover:text-red-500 transition-all cursor-pointer group"
-          >
-            <svg className="w-5 h-5 mr-3 text-foreground/40 group-hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Keluar Akun
-          </button>
-        </div>
+                <Icon d={theme === "dark" ? SUN : MOON} className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleLogout}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-foreground/55 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer press"
+                aria-label="Keluar Akun"
+                title="Keluar Akun"
+              >
+                <Icon d={LOGOUT} className="w-4 h-4" />
+                <span className="sr-only">Keluar Akun</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Isi halaman */}
+        <main
+          ref={mainRef}
+          className="flex-1 flex flex-col min-w-0 md:pt-0 pt-[calc(3rem+env(safe-area-inset-top))] pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 h-[100dvh] md:h-screen overflow-y-auto overscroll-contain"
+        >
+          <div key={pathname} className="page-enter flex-1 flex flex-col min-w-0">
+            {children}
+          </div>
+        </main>
+
+        {/* Bilah navigasi bawah (HP) */}
+        <BottomNav navItems={navItems} pathname={pathname} isMenuOpen={isOpen} onMenu={() => setIsOpen((v) => !v)} />
       </div>
-
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 md:pt-0 pt-[calc(3rem+env(safe-area-inset-top))] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 h-[100dvh] md:h-screen overflow-y-auto overscroll-contain bg-background/50">
-        {children}
-      </main>
-
-      {/* Bilah navigasi bawah (HP) */}
-      <BottomNav navItems={navItems} pathname={pathname} isMenuOpen={isOpen} onMenu={() => setIsOpen((v) => !v)} />
-    </div>
     </NotificationProvider>
   );
 }

@@ -1285,7 +1285,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
           <svg className="w-20 h-20 text-red-500 mb-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
           </svg>
-          <h2 className="text-3xl font-serif mb-2">{t.screenshotTitle}</h2>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">{t.screenshotTitle}</h2>
           <p className="text-white/70 max-w-md">{t.screenshotDesc}</p>
         </div>
       )}
@@ -1294,7 +1294,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
       <header className="fixed top-0 left-0 right-0 z-40 bg-surface/80 backdrop-blur-md border-b border-white/10 shadow-sm transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 py-3 md:py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-xl md:text-2xl font-serif text-foreground tracking-wide">{project.clientName}</h1>
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground tracking-wide">{project.clientName}</h1>
             <div className="flex flex-wrap items-center gap-2 mt-1 font-sans">
               <span className="text-[11px] md:text-xs text-foreground/70 bg-surface-alt/70 px-2.5 py-0.5 rounded-full border border-border flex items-center gap-1">
                 <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -1355,7 +1355,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             <div className="flex flex-col">
               <span className="text-[10px] text-foreground/50 uppercase tracking-widest font-medium">{t.selected}</span>
               <div className="flex items-baseline gap-1">
-                <span className={`text-xl font-serif leading-none ${selectedPhotos.size > activeMaxPhotos ? "text-accent" : "text-foreground"}`}>
+                <span className={`text-xl font-bold tracking-tight leading-none ${selectedPhotos.size > activeMaxPhotos ? "text-accent" : "text-foreground"}`}>
                   {selectedPhotos.size}
                 </span>
                 <span className="text-sm text-foreground/40">/ {activeMaxPhotos}</span>
@@ -1447,7 +1447,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
             <svg className="w-16 h-16 text-foreground/20 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
             </svg>
-            <h3 className="text-xl font-serif text-foreground mb-2">{t.noPhotosTitle}</h3>
+            <h3 className="text-xl font-bold tracking-tight text-foreground mb-2">{t.noPhotosTitle}</h3>
             <p className="text-foreground/60 max-w-md mx-auto text-sm">
               {t.noPhotosDesc}
             </p>
@@ -1855,7 +1855,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-6 border-b border-border flex justify-between items-center bg-surface-alt/50">
-              <h2 className="text-2xl font-serif">{t.officialPricelist}</h2>
+              <h2 className="text-2xl font-bold tracking-tight">{t.officialPricelist}</h2>
               <button 
                 onClick={() => setShowPriceList(false)}
                 className="text-foreground/50 hover:text-foreground cursor-pointer"
@@ -1906,7 +1906,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-6 md:p-8">
-              <h2 className="text-2xl font-serif mb-2 text-foreground">{t.editorModalTitle}</h2>
+              <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground">{t.editorModalTitle}</h2>
               <p className="text-foreground/70 font-sans text-sm mb-6">
                 {t.editorModalDesc}
               </p>
@@ -1965,7 +1965,7 @@ export default function ClientGallery({ params }: { params: Promise<{ id: string
               👤
             </div>
             <div>
-              <h3 className="text-xl md:text-2xl font-serif text-foreground">{t.selectNameTitle}</h3>
+              <h3 className="text-xl md:text-2xl font-bold tracking-tight text-foreground">{t.selectNameTitle}</h3>
               <p className="text-xs text-foreground/60 mt-1 font-sans">
                 {t.selectNameDesc(project.clientName)}
               </p>

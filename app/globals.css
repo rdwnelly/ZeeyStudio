@@ -1,23 +1,37 @@
 @import "tailwindcss";
 
+/* Varian `dark:` mengikuti tombol tema aplikasi (kelas .dark di <html>), bukan pengaturan OS */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Token warna ─────────────────────────────────────────────────────────────
+   Modern-minimalis penuh warna: aksen ungu-violet, latar sangat lembut dengan
+   gradasi warna samar, permukaan putih bersih / biru malam di mode gelap. */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
+  --background: #f5f6fb;
+  --foreground: #0f1222;
+  --accent: #7c3aed;
+  --accent-dark: #6d28d9;
+  --accent-rgb: 124, 58, 237;
   --surface: #ffffff;
-  --surface-alt: #f1f5f9;
-  --border: #e2e8f0;
+  --surface-alt: #f1f2f9;
+  --border: #e6e8f2;
+  --mesh-1: rgb(99 102 241 / 0.12);
+  --mesh-2: rgb(236 72 153 / 0.09);
+  --mesh-3: rgb(16 185 129 / 0.07);
 }
 
 .dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --accent: #3b82f6;
-  --accent-dark: #60a5fa;
-  --surface: #1e293b;
-  --surface-alt: #334155;
-  --border: #334155;
+  --background: #0a0d1a;
+  --foreground: #eef0fb;
+  --accent: #8b5cf6;
+  --accent-dark: #a78bfa;
+  --accent-rgb: 139, 92, 246;
+  --surface: #121729;
+  --surface-alt: #1b2140;
+  --border: #252c4a;
+  --mesh-1: rgb(99 102 241 / 0.16);
+  --mesh-2: rgb(236 72 153 / 0.10);
+  --mesh-3: rgb(16 185 129 / 0.07);
 }
 
 @theme inline {
@@ -28,19 +42,48 @@
   --color-surface: var(--surface);
   --color-surface-alt: var(--surface-alt);
   --color-border: var(--border);
-  
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --font-sans: var(--font-app), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-app), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Bayangan lembut bernuansa ungu — kartu terasa "melayang" tanpa garis tebal */
+@theme {
+  --shadow-sm: 0 1px 2px rgb(15 18 34 / 0.04), 0 2px 8px -2px rgb(79 70 229 / 0.06);
+  --shadow-md: 0 2px 4px rgb(15 18 34 / 0.04), 0 8px 24px -6px rgb(79 70 229 / 0.12);
+  --shadow-lg: 0 4px 8px rgb(15 18 34 / 0.05), 0 16px 40px -10px rgb(79 70 229 / 0.18);
+  --shadow-xl: 0 8px 16px rgb(15 18 34 / 0.06), 0 24px 56px -12px rgb(79 70 229 / 0.24);
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
 }
 
 body {
   background-color: var(--background);
+  background-image:
+    radial-gradient(48rem 26rem at -10% -10%, var(--mesh-1), transparent 60%),
+    radial-gradient(40rem 24rem at 110% 0%, var(--mesh-2), transparent 60%),
+    radial-gradient(44rem 28rem at 50% 120%, var(--mesh-3), transparent 60%);
+  background-repeat: no-repeat;
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-serif);
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: rgb(var(--accent-rgb) / 0.25);
 }
 
 /* ── Tampilan ringkas di layar HP (< 768px) ─────────────────────────────────
@@ -63,6 +106,28 @@ a, button, [role="button"] {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Kolom isian: fokus berwarna aksen yang halus */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,
+textarea {
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.12);
+}
+
+/* Scrollbar tipis & modern (desktop) */
+@media (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--accent-rgb) / 0.25) transparent;
+  }
+}
+
 /* Gulir horizontal tanpa scrollbar (kartu ringkasan, tab, kalender) */
 .hide-scrollbar {
   -ms-overflow-style: none;
@@ -70,4 +135,141 @@ a, button, [role="button"] {
 }
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Animasi ─────────────────────────────────────────────────────────────────
+   Kelas `animate-in fade-in zoom-in-95 slide-in-from-*` sudah dipakai di banyak
+   halaman tetapi sebelumnya tidak punya definisi (plugin tidak terpasang).
+   Didefinisikan di sini agar seluruh modal, kartu, dan panel benar-benar beranimasi. */
+@keyframes zs-enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+      scale(var(--tw-enter-scale, 1));
+  }
+}
+
+@utility animate-in {
+  animation: zs-enter var(--tw-duration, 220ms) var(--tw-ease, cubic-bezier(0.2, 0.8, 0.2, 1)) backwards;
+}
+@utility fade-in {
+  --tw-enter-opacity: 0;
+}
+@utility fade-in-* {
+  --tw-enter-opacity: calc(--value(integer) * 1%);
+}
+@utility zoom-in-* {
+  --tw-enter-scale: calc(--value(integer) * 1%);
+}
+@utility slide-in-from-bottom-* {
+  --tw-enter-translate-y: calc(--value(integer) * var(--spacing));
+}
+@utility slide-in-from-top-* {
+  --tw-enter-translate-y: calc(--value(integer) * var(--spacing) * -1);
+}
+@utility slide-in-from-left-* {
+  --tw-enter-translate-x: calc(--value(integer) * var(--spacing) * -1);
+}
+@utility slide-in-from-right-* {
+  --tw-enter-translate-x: calc(--value(integer) * var(--spacing));
+}
+
+/* Transisi masuk halaman (dipasang pada isi halaman setiap pindah menu) */
+.page-enter {
+  --tw-enter-opacity: 0;
+  --tw-enter-translate-y: 10px;
+  animation: zs-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+/* Anak-anak elemen muncul bergiliran (kartu statistik, daftar, grid) */
+.stagger > * {
+  --tw-enter-opacity: 0;
+  --tw-enter-translate-y: 12px;
+  --tw-enter-scale: 0.98;
+  animation: zs-enter 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.stagger > *:nth-child(2) { animation-delay: 50ms; }
+.stagger > *:nth-child(3) { animation-delay: 100ms; }
+.stagger > *:nth-child(4) { animation-delay: 150ms; }
+.stagger > *:nth-child(5) { animation-delay: 200ms; }
+.stagger > *:nth-child(6) { animation-delay: 250ms; }
+.stagger > *:nth-child(7) { animation-delay: 300ms; }
+.stagger > *:nth-child(8) { animation-delay: 350ms; }
+.stagger > *:nth-child(n + 9) { animation-delay: 400ms; }
+
+/* Interaksi mikro */
+@utility lift {
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s, border-color 0.25s;
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+  }
+}
+@utility press {
+  transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+/* Gradasi merek: indigo → violet → pink */
+@utility bg-brand {
+  background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 45%, #ec4899 100%);
+}
+@utility text-brand {
+  background-image: linear-gradient(135deg, #6366f1 0%, #8b5cf6 45%, #ec4899 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Latar "aurora" bergerak perlahan (halaman login, kartu sorotan) */
+@keyframes zs-aurora {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@utility bg-aurora {
+  /* Statis: animasi background-position memaksa repaint tiap frame (berat di HP murah) */
+  background-image: linear-gradient(125deg, #6366f1 0%, #8b5cf6 38%, #ec4899 78%, #f59e0b 120%);
+}
+/* Versi bergerak — hanya untuk elemen kecil (mis. cahaya logo di halaman login) */
+@utility animate-aurora {
+  background-image: linear-gradient(120deg, #6366f1, #8b5cf6, #ec4899, #f59e0b, #10b981, #6366f1);
+  background-size: 300% 300%;
+  animation: zs-aurora 14s ease-in-out infinite;
+}
+
+/* Gumpalan warna melayang (dekorasi) */
+@keyframes zs-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(12px, -16px, 0) scale(1.06); }
+}
+@utility animate-float {
+  /* Hanya transform + layer GPU sendiri: gumpalan blur dirender sekali lalu digeser */
+  animation: zs-float 9s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Kilau pemuatan (skeleton) */
+@keyframes zs-shimmer {
+  to { background-position: -200% 0; }
+}
+@utility skeleton {
+  background: linear-gradient(90deg, var(--surface-alt) 25%, color-mix(in srgb, var(--surface-alt) 55%, var(--surface)) 50%, var(--surface-alt) 75%);
+  background-size: 200% 100%;
+  animation: zs-shimmer 1.4s linear infinite;
+}
+
+/* Hormati pengguna yang memilih mengurangi gerakan */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .page-enter,
+  .stagger > *,
+  .animate-aurora,
+  .animate-float {
+    animation: none !important;
+  }
+  .lift:hover {
+    transform: none;
+  }
 }

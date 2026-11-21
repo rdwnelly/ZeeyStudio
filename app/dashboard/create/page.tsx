@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { BentoCard, Field, Icon, INPUT, PageHeader, SkeletonBlock } from "@/components/ui";
 import Link from "next/link";
 import { db } from "@/lib/firebase";
 import { normalizeWaNumber } from "@/lib/phone";
@@ -38,6 +39,24 @@ type Project = {
   socialMedia?: string;
   specialNotes?: string;
 };
+
+const LEAD_SOURCES = [
+  { value: "Instagram", label: "Instagram" },
+  { value: "TikTok", label: "TikTok" },
+  { value: "Referensi Teman", label: "Referensi" },
+  { value: "Iklan Facebook/IG", label: "Iklan" },
+  { value: "Walk-in (Datang Langsung)", label: "Walk-in" },
+  { value: "Lainnya", label: "Lainnya" },
+];
+
+function SummaryRow({ label, value, tone }: { label: string; value: string; tone?: "emerald" }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-foreground/55 shrink-0">{label}</dt>
+      <dd className={`text-right font-semibold ${tone === "emerald" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"}`}>{value}</dd>
+    </div>
+  );
+}
 
 function CreateBookingForm() {
   const searchParams = useSearchParams();
@@ -224,6 +243,12 @@ function CreateBookingForm() {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg("");
+
+    if (!leadSource) {
+      setErrorMsg("Pilih dulu sumber klien (dari mana klien mengenal studio).");
+      setIsSubmitting(false);
+      return;
+    }
     
     const slug = clientName
       .toLowerCase()
@@ -370,289 +395,390 @@ function CreateBookingForm() {
     return `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
   };
 
+  // ── Ringkasan langsung (dihitung dari isian form) ──────────────────────────
+  const pickedPackage = priceList.find((p) => p.id === selectedPackage);
+  const packagePrice = Number(pickedPackage?.price) || 0;
+  const dpValue = Number(dpAmount) || 0;
+  const remaining = Math.max(0, packagePrice - dpValue);
+  const rupiah = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
+  const scheduleLabel =
+    shootDate
+      ? `${new Date(shootDate).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" })}${shootTime ? ` · ${shootTime}` : ""}`
+      : "Belum dipilih";
+
   return (
     <Sidebar>
-      <div className="p-4 md:p-8 lg:p-10 max-w-3xl mx-auto w-full pb-24 animate-in fade-in duration-500">
-        <div className="mb-8 border-b border-border/50 pb-6">
-          <h1 className="text-3xl md:text-4xl text-foreground mb-2 font-serif">
-            {editParam ? "Edit Booking" : "Buat Booking Baru"}
-          </h1>
-          <p className="text-foreground/70 font-sans text-sm md:text-base">
-            {editParam ? "Perbarui detail pesanan klien." : "Daftarkan pesanan klien, atur jadwal, dan tugaskan fotografer."}
-          </p>
-        </div>
+      <div className="p-3.5 md:p-6 lg:p-8 max-w-6xl mx-auto w-full pb-36 lg:pb-8">
+        <PageHeader
+          module="create"
+          title={editParam ? "Edit Booking" : "Buat Booking Baru"}
+          subtitle={editParam ? "Perbarui detail pesanan klien." : "Daftarkan pesanan klien, atur jadwal, dan tugaskan fotografer."}
+        />
 
-        <div className="space-y-6 md:space-y-8">
-          {isLoadingData ? (
-             <div className="bg-surface border border-border p-6 md:p-8 rounded-3xl shadow-sm flex justify-center items-center h-40">
-               <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-             </div>
-          ) : (
-          <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
-            {/* SECTION 1: DATA KLIEN */}
-            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
-                <div className="bg-accent/10 text-accent p-2.5 rounded-xl">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                </div>
-                <h2 className="text-xl font-serif text-foreground">Data Klien</h2>
-              </div>
-              <div className="p-5 md:p-6 space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Nama Klien</label>
-                    <input type="text" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g., John & Jane" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">WhatsApp Number</label>
-                    <input type="tel" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={waNumber} onChange={(e) => setWaNumber(e.target.value)} placeholder="e.g., 08123456789" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Email Klien (Opsional)</label>
-                    <input type="email" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="e.g., client@example.com" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Tipe Klien</label>
-                    <select className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={clientType} onChange={(e) => setClientType(e.target.value as any)}>
-                      <option value="Reguler">Reguler</option>
-                      <option value="VIP">VIP</option>
-                      <option value="Blacklist">Blacklist</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
+        {isLoadingData ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <SkeletonBlock className="h-56 md:col-span-2" />
+              <SkeletonBlock className="h-44" />
+              <SkeletonBlock className="h-44" />
             </div>
-
-            {/* SECTION 2: DETAIL PESANAN & JADWAL */}
-            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
-                <div className="bg-blue-500/10 text-blue-500 p-2.5 rounded-xl">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <SkeletonBlock className="h-72" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+            {/* ── Kolom kiri: kartu-kartu isian ─────────────────────────── */}
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+              {/* Data Klien */}
+              <BentoCard
+                className="md:col-span-2"
+                tone="from-indigo-500 to-violet-500"
+                glow="shadow-indigo-500/30"
+                icon="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                title="Data Klien"
+                desc="Identitas & kontak utama"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <Field label="Nama Klien">
+                    <input type="text" required className={INPUT} value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Contoh: John & Jane" />
+                  </Field>
+                  <Field label="Nomor WhatsApp">
+                    <input type="tel" required className={INPUT} value={waNumber} onChange={(e) => setWaNumber(e.target.value)} placeholder="Contoh: 08123456789" />
+                  </Field>
+                  <Field label="Email Klien" optional>
+                    <input type="email" className={INPUT} value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="Contoh: klien@email.com" />
+                  </Field>
+                  <Field label="Tipe Klien">
+                    <div className="flex gap-2">
+                      {(["Reguler", "VIP", "Blacklist"] as const).map((t) => {
+                        const on = clientType === t;
+                        const active =
+                          t === "VIP"
+                            ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white border-transparent shadow-md shadow-amber-500/30"
+                            : t === "Blacklist"
+                            ? "bg-gradient-to-br from-rose-500 to-red-600 text-white border-transparent shadow-md shadow-red-500/30"
+                            : "bg-gradient-to-br from-sky-500 to-blue-600 text-white border-transparent shadow-md shadow-sky-500/30";
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setClientType(t)}
+                            aria-pressed={on}
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer press ${
+                              on ? active : "bg-surface-alt/60 text-foreground/55 border-border/60 hover:text-foreground"
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
                 </div>
-                <h2 className="text-xl font-serif text-foreground">Detail Pesanan & Jadwal</h2>
-              </div>
-              <div className="p-5 md:p-6 space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Paket Harga</label>
-                    <select required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={selectedPackage} onChange={(e) => setSelectedPackage(e.target.value)}>
-                      <option value="">-- Pilih Paket --</option>
-                      {priceList.filter(p => !p.isSystem).map(p => (
-                        <option key={p.id} value={p.id}>{p.name} (Rp {p.price.toLocaleString('id-ID')})</option>
+              </BentoCard>
+
+              {/* Jadwal */}
+              <BentoCard
+                tone="from-sky-500 to-blue-600"
+                glow="shadow-sky-500/30"
+                icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                title="Jadwal Pemotretan"
+                desc="Tanggal & jam sesi"
+              >
+                <div className="space-y-3.5">
+                  <Field label="Tanggal">
+                    <input type="date" required className={INPUT} value={shootDate} onChange={(e) => setShootDate(e.target.value)} />
+                  </Field>
+                  <Field label="Jam">
+                    <input type="time" required className={INPUT} value={shootTime} onChange={(e) => setShootTime(e.target.value)} />
+                  </Field>
+                </div>
+              </BentoCard>
+
+              {/* Paket & kuota */}
+              <BentoCard
+                tone="from-emerald-500 to-teal-500"
+                glow="shadow-emerald-500/30"
+                icon="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                title="Paket & Kuota"
+                desc="Harga dan batas pilih foto"
+              >
+                <div className="space-y-3.5">
+                  <Field label="Paket Harga">
+                    <select required className={`${INPUT} appearance-none cursor-pointer`} value={selectedPackage} onChange={(e) => setSelectedPackage(e.target.value)}>
+                      <option value="">— Pilih Paket —</option>
+                      {priceList.filter((p) => !p.isSystem).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name} ({rupiah(Number(p.price) || 0)})</option>
                       ))}
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Batas Maksimal Pilih Foto</label>
-                    <input type="number" required min="1" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={maxPhotos} onChange={(e) => setMaxPhotos(Number(e.target.value))} placeholder="e.g., 50" />
-                  </div>
+                  </Field>
+                  <Field label="Batas Maksimal Pilih Foto">
+                    <input type="number" required min="1" className={INPUT} value={maxPhotos} onChange={(e) => setMaxPhotos(Number(e.target.value))} placeholder="Contoh: 50" />
+                  </Field>
                 </div>
+              </BentoCard>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Tanggal Pemotretan</label>
-                    <input type="date" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={shootDate} onChange={(e) => setShootDate(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Jam Pemotretan</label>
-                    <input type="time" required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={shootTime} onChange={(e) => setShootTime(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">DP / Uang Muka (Rp) (Opsional)</label>
-                    <input type="number" min="0" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={dpAmount} onChange={(e) => setDpAmount(Number(e.target.value))} placeholder="e.g., 500000" />
-                    <p className="text-xs text-foreground/50 mt-2 leading-relaxed">Jika klien sudah membayar uang muka (DP), masukkan nominalnya di sini agar terpotong dari total tagihan akhir.</p>
-                  </div>
+              {/* Pembayaran & fotografer */}
+              <BentoCard
+                className={authRole === "owner" ? "md:col-span-2" : ""}
+                tone="from-pink-500 to-rose-500"
+                glow="shadow-pink-500/30"
+                icon="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
+                title="Uang Muka & Petugas"
+                desc="DP yang sudah diterima"
+              >
+                <div className={`grid grid-cols-1 gap-3.5 ${authRole === "owner" ? "sm:grid-cols-2" : ""}`}>
+                  <Field label="DP / Uang Muka (Rp)" optional hint="Nominal ini otomatis mengurangi total tagihan klien.">
+                    <input type="number" min="0" className={INPUT} value={dpAmount} onChange={(e) => setDpAmount(Number(e.target.value))} placeholder="Contoh: 500000" />
+                  </Field>
                   {authRole === "owner" && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2 text-foreground/80">Tugaskan Fotografer (Admin)</label>
-                      <select className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={assignedAdmin} onChange={(e) => setAssignedAdmin(e.target.value)}>
-                        <option value="">-- Pilih Fotografer --</option>
-                        {adminsList.map(a => (
+                    <Field label="Tugaskan Fotografer">
+                      <select className={`${INPUT} appearance-none cursor-pointer`} value={assignedAdmin} onChange={(e) => setAssignedAdmin(e.target.value)}>
+                        <option value="">— Pilih Fotografer —</option>
+                        {adminsList.map((a) => (
                           <option key={a.id} value={a.name}>{a.name} ({a.username})</option>
                         ))}
                       </select>
-                    </div>
+                    </Field>
                   )}
                 </div>
-              </div>
-            </div>
+              </BentoCard>
 
-            {/* SECTION 3: INFORMASI TAMBAHAN */}
-            <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
-              <div className="bg-surface-alt/50 border-b border-border p-5 md:p-6 flex items-center gap-3">
-                <div className="bg-emerald-500/10 text-emerald-500 p-2.5 rounded-xl">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
-                </div>
-                <h2 className="text-xl font-serif text-foreground">Informasi Tambahan</h2>
-              </div>
-              <div className="p-5 md:p-6 space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Sumber Klien (Lead Source)</label>
-                    <select required className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 appearance-none cursor-pointer" value={leadSource} onChange={(e) => setLeadSource(e.target.value)}>
-                      <option value="">-- Pilih Sumber --</option>
-                      <option value="Instagram">Instagram</option>
-                      <option value="TikTok">TikTok</option>
-                      <option value="Referensi Teman">Referensi Teman</option>
-                      <option value="Iklan Facebook/IG">Iklan Facebook/IG</option>
-                      <option value="Walk-in (Datang Langsung)">Walk-in (Datang Langsung)</option>
-                      <option value="Lainnya">Lainnya...</option>
-                    </select>
+              {/* Sumber klien */}
+              <BentoCard
+                className="md:col-span-2"
+                tone="from-amber-400 to-orange-500"
+                glow="shadow-amber-500/30"
+                icon="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"
+                title="Sumber Klien"
+                desc="Dari mana klien mengenal studio"
+              >
+                <div className="space-y-3.5">
+                  <div className="flex flex-wrap gap-2">
+                    {LEAD_SOURCES.map((s) => {
+                      const on = leadSource === s.value;
+                      return (
+                        <button
+                          key={s.value}
+                          type="button"
+                          onClick={() => setLeadSource(s.value)}
+                          aria-pressed={on}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer press ${
+                            on
+                              ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white border-transparent shadow-md shadow-amber-500/30"
+                              : "bg-surface-alt/60 text-foreground/55 border-border/60 hover:text-foreground"
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     {leadSource === "Lainnya" && (
-                      <input type="text" required placeholder="Sebutkan sumber klien..." className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 mt-3 animate-in fade-in" value={customLeadSource} onChange={(e) => setCustomLeadSource(e.target.value)} />
+                      <Field label="Sebutkan Sumbernya">
+                        <input type="text" required className={INPUT} value={customLeadSource} onChange={(e) => setCustomLeadSource(e.target.value)} placeholder="Tulis sumber klien…" />
+                      </Field>
                     )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-foreground/80">Akun Instagram / TikTok</label>
-                    <input type="text" className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50" value={socialMedia} onChange={(e) => setSocialMedia(e.target.value)} placeholder="e.g., @johndoe" />
+                    <Field label="Akun Instagram / TikTok" optional>
+                      <input type="text" className={INPUT} value={socialMedia} onChange={(e) => setSocialMedia(e.target.value)} placeholder="Contoh: @johndoe" />
+                    </Field>
                   </div>
                 </div>
+              </BentoCard>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-foreground/80">Catatan / Preferensi Khusus</label>
-                  <textarea className="w-full p-3.5 border border-border rounded-xl bg-background focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all hover:border-accent/50 min-h-[120px] resize-y" value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} placeholder="e.g., Klien pemalu, konsep vintage, alergi makeup..." />
-                </div>
-              </div>
+              {/* Catatan */}
+              <BentoCard
+                className="md:col-span-2"
+                tone="from-purple-500 to-fuchsia-500"
+                glow="shadow-fuchsia-500/30"
+                icon="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                title="Catatan Khusus"
+                desc="Preferensi atau permintaan klien"
+              >
+                <textarea
+                  className={`${INPUT} min-h-[110px] resize-y`}
+                  value={specialNotes}
+                  onChange={(e) => setSpecialNotes(e.target.value)}
+                  placeholder="Contoh: klien pemalu, konsep vintage, alergi makeup…"
+                />
+              </BentoCard>
             </div>
 
-            {errorMsg && (
-              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3">
-                <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                {errorMsg}
+            {/* ── Kolom kanan: ringkasan melekat ────────────────────────── */}
+            <aside className="lg:sticky lg:top-4 space-y-3 animate-in fade-in slide-in-from-bottom-3 duration-500">
+              <div className="rounded-3xl bg-surface border border-border/70 shadow-sm overflow-hidden">
+                <div className="bg-aurora px-4 py-3.5 text-white">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-white/80">Ringkasan Pesanan</p>
+                  <p className="mt-0.5 text-lg font-bold tracking-tight truncate">{clientName || "Klien baru"}</p>
+                </div>
+                <dl className="p-4 space-y-3 text-xs">
+                  <SummaryRow label="Jadwal" value={scheduleLabel} />
+                  <SummaryRow label="Paket" value={pickedPackage?.name || "Belum dipilih"} />
+                  <SummaryRow label="Kuota foto" value={maxPhotos ? `${maxPhotos} foto` : "—"} />
+                  <SummaryRow label="Fotografer" value={assignedAdmin || "Belum ditugaskan"} />
+                  <div className="pt-3 border-t border-border/60 space-y-2">
+                    <SummaryRow label="Harga paket" value={rupiah(packagePrice)} />
+                    {dpValue > 0 && <SummaryRow label="DP diterima" value={`− ${rupiah(dpValue)}`} tone="emerald" />}
+                    <div className="flex items-end justify-between gap-3 pt-1">
+                      <span className="text-foreground/60">Sisa tagihan</span>
+                      <span className="text-xl font-extrabold tracking-tight tabular-nums text-brand">{rupiah(remaining)}</span>
+                    </div>
+                  </div>
+                </dl>
               </div>
-            )}
 
-            <div className="pt-4">
-              <button 
+              {errorMsg && (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-600 dark:text-red-400 text-xs font-medium animate-in fade-in zoom-in-95">
+                  <Icon d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-4 h-4 shrink-0 mt-px" />
+                  {errorMsg}
+                </div>
+              )}
+
+              <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-accent text-white py-4 md:py-4.5 rounded-2xl font-medium hover:bg-accent-dark transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-base md:text-lg cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+                className="group relative w-full overflow-hidden bg-brand text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg shadow-violet-500/35 transition-all hover:brightness-110 hover:shadow-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed hidden lg:flex items-center justify-center gap-2 press"
               >
                 {isSubmitting ? (
                   <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    Memproses...
+                    <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Memproses…
                   </>
                 ) : (
-                  editParam ? 'Simpan Perubahan' : 'Buat Pesanan & Jadwal'
+                  <>
+                    {editParam ? "Simpan Perubahan" : "Buat Pesanan & Jadwal"}
+                    <Icon d="M14 5l7 7m0 0l-7 7m7-7H3" className="w-4 h-4 transition-transform group-hover:translate-x-1" strokeWidth={2.5} />
+                  </>
                 )}
               </button>
+              <p className="hidden lg:block text-center text-[11px] text-foreground/45 leading-snug">
+                Tautan galeri & folder Google Drive dibuat otomatis setelah pesanan tersimpan.
+              </p>
+            </aside>
+
+            {/* Bilah aksi melekat (HP): sisa tagihan + simpan, tanpa perlu menggulir ke bawah */}
+            <div className="lg:hidden fixed inset-x-3 bottom-[calc(5.2rem+env(safe-area-inset-bottom))] z-30 px-3 py-2.5 rounded-2xl bg-surface/90 backdrop-blur-xl border border-border/60 shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium text-foreground/50 leading-none">Sisa tagihan</p>
+                  <p className="mt-1 text-base font-extrabold tracking-tight tabular-nums text-brand leading-none">{rupiah(remaining)}</p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-brand text-white py-3 rounded-2xl font-bold text-sm shadow-lg shadow-violet-500/35 transition-all hover:brightness-110 cursor-pointer disabled:opacity-70 flex items-center justify-center gap-2 press"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      Memproses…
+                    </>
+                  ) : (
+                    <>
+                      {editParam ? "Simpan Perubahan" : "Buat Pesanan"}
+                      <Icon d="M14 5l7 7m0 0l-7 7m7-7H3" className="w-4 h-4" strokeWidth={2.5} />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </form>
-          )}
+        )}
 
-          {generatedLink && generatedProject && (
-            <div className="mt-8 bg-surface border border-border rounded-2xl shadow-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="bg-emerald-500/10 border-b border-border p-5 md:p-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-500 text-white p-2 rounded-full shadow-sm">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-serif text-foreground font-semibold">Pesanan & Jadwal Berhasil Dibuat!</h3>
-                    <p className="text-xs text-foreground/60">ID: {generatedProject.id} &bull; Klien: {generatedProject.clientName}</p>
-                  </div>
-                </div>
-                <span className="text-xs px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-medium">
-                  Sukses
+        {generatedLink && generatedProject && (
+          <section className="mt-5 rounded-3xl bg-surface border border-border/70 shadow-lg overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-4 bg-emerald-500/10 border-b border-border/60">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
+                  <Icon d="M5 13l4 4L19 7" className="w-5 h-5" strokeWidth={2.8} />
                 </span>
-              </div>
-
-              <div className="p-5 md:p-6 space-y-5">
-                {/* Link Bar & Salin Tautan */}
-                <div>
-                  <label className="block text-xs font-semibold text-foreground/70 uppercase tracking-wider mb-2">Tautan Galeri Klien</label>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="text" 
-                      readOnly 
-                      value={generatedLink} 
-                      className="w-full p-3.5 bg-background border border-border rounded-xl text-sm font-mono text-foreground/80 outline-none focus:border-accent transition-all"
-                    />
-                    <button 
-                      type="button"
-                      onClick={handleCopyLink}
-                      className="px-5 py-3.5 border border-border rounded-xl bg-surface-alt hover:bg-border transition-colors whitespace-nowrap text-sm font-semibold cursor-pointer flex items-center gap-1.5"
-                    >
-                      {copiedLink ? (
-                        <span className="text-emerald-600 font-bold">Tersalin ✓</span>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 text-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                          Salin Tautan
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm md:text-base font-bold tracking-tight">Pesanan &amp; Jadwal Berhasil Dibuat!</h3>
+                  <p className="text-[11px] text-foreground/55 truncate">ID: {generatedProject.id} &bull; Klien: {generatedProject.clientName}</p>
                 </div>
+              </div>
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                Sukses
+              </span>
+            </div>
 
-                {/* Status Indicator Folder GDrive */}
-                {generatedProject.gdriveFolderId ? (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-xl text-xs flex items-center gap-2.5">
-                    <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
-                    <span>Folder Google Drive klien <strong>({generatedProject.clientName})</strong> berhasil dibuat otomatis beserta sub-folder foto!</span>
-                  </div>
-                ) : (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl text-xs flex items-center gap-2.5">
-                    <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                    <span>Folder Google Drive belum dibuat. Tekan <strong>Upload Foto (Buka GDrive)</strong> di bawah untuk buat folder.</span>
-                  </div>
-                )}
-
-                {/* Grid Tombol Aksi */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 font-sans">
-                  {/* 1. Upload Foto (Buka GDrive) */}
-                  <button 
-                    type="button"
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 text-center py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                    Upload Foto (Buka GDrive)
-                  </button>
-
-                  {/* 2. Sub-Token (Bagi Token Link) */}
+            <div className="p-4 md:p-5 space-y-4">
+              <div>
+                <label className="block text-[11px] font-semibold text-foreground/55 uppercase tracking-wider mb-1.5">Tautan Galeri Klien</label>
+                <div className="flex items-center gap-2">
+                  <input type="text" readOnly value={generatedLink} className={`${INPUT} font-mono text-xs`} />
                   <button
                     type="button"
-                    onClick={() => setIsMultiTokenOpen(true)}
-                    className="bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 text-center py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    onClick={handleCopyLink}
+                    className="shrink-0 px-4 py-3 rounded-xl bg-surface-alt hover:bg-border border border-border/60 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 press"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                    {generatedProject.subTokens && generatedProject.subTokens.length > 0 ? `Sub-Token (${generatedProject.subTokens.length} Link)` : 'Sub-Token (Bagi Token Link)'}
+                    {copiedLink ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">Tersalin ✓</span>
+                    ) : (
+                      <>
+                        <Icon d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" className="w-4 h-4 text-foreground/55" />
+                        Salin
+                      </>
+                    )}
                   </button>
-
-                  {/* 3. Buka Galeri */}
-                  <Link
-                    href={`/client/${generatedProject.id}`}
-                    target="_blank"
-                    className="bg-surface-alt hover:bg-border text-foreground border border-border text-center py-3 px-4 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <svg className="w-4 h-4 text-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    Buka Galeri
-                  </Link>
-
-                  {/* 4. Kirim via WhatsApp */}
-                  <a 
-                    href={createWhatsAppLink()} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="bg-[#25D366] text-white text-center py-3 px-4 rounded-xl text-sm font-semibold hover:bg-[#20bd5a] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                    Kirim via WhatsApp
-                  </a>
                 </div>
               </div>
+
+              {generatedProject.gdriveFolderId ? (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-700 dark:text-emerald-400">
+                  <Icon d="M5 13l4 4L19 7" className="w-4 h-4 shrink-0 mt-px" strokeWidth={2.5} />
+                  <span>Folder Google Drive klien <strong>({generatedProject.clientName})</strong> berhasil dibuat otomatis beserta sub-folder foto.</span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-400">
+                  <Icon d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" className="w-4 h-4 shrink-0 mt-px" />
+                  <span>Folder Google Drive belum dibuat. Tekan <strong>Upload Foto (Buka GDrive)</strong> di bawah untuk membuatnya.</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="py-3 px-4 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white text-xs font-bold shadow-md shadow-sky-500/25 transition-all hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer press"
+                >
+                  <Icon d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" className="w-4 h-4" />
+                  Upload Foto (Buka GDrive)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMultiTokenOpen(true)}
+                  className="py-3 px-4 rounded-2xl bg-accent/10 hover:bg-accent/20 text-accent border border-accent/25 text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer press"
+                >
+                  <Icon d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" className="w-4 h-4" />
+                  {generatedProject.subTokens && generatedProject.subTokens.length > 0 ? `Sub-Token (${generatedProject.subTokens.length} Link)` : "Sub-Token (Bagi Link)"}
+                </button>
+
+                <Link
+                  href={`/client/${generatedProject.id}`}
+                  target="_blank"
+                  className="py-3 px-4 rounded-2xl bg-surface-alt hover:bg-border border border-border/60 text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer press"
+                >
+                  <Icon d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" className="w-4 h-4 text-foreground/55" />
+                  Buka Galeri
+                </Link>
+
+                <a
+                  href={createWhatsAppLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer press"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg>
+                  Kirim via WhatsApp
+                </a>
+              </div>
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
+
       <MultiTokenModal
         isOpen={isMultiTokenOpen}
         onClose={() => setIsMultiTokenOpen(false)}
@@ -681,7 +807,7 @@ function CreateBookingForm() {
 
 export default function CreateBookingPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat form...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-foreground/60">Memuat form…</div>}>
       <CreateBookingForm />
     </Suspense>
   );

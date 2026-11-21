@@ -1,16 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const appFont = Plus_Jakarta_Sans({
+  variable: "--font-app",
   subsets: ["latin"],
+  display: "swap",
 });
 
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0d1a" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1, // cegah zoom otomatis iOS saat mengetik di input berfont kecil
@@ -40,7 +44,7 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${inter.variable} h-full antialiased`}
+      className={`${appFont.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

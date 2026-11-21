@@ -1,29 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { Icon } from "./ui";
+import { isActivePath, type NavModule } from "@/lib/nav-modules";
 
-export type NavItem = { id: string; name: string; href: string; icon: string };
-
-/** Label pendek untuk bilah navigasi bawah (ruang terbatas di layar HP). */
-const SHORT_LABEL: Record<string, string> = {
-  dashboard: "Beranda",
-  create: "Buat",
-  bookings: "Pesanan",
-  editor: "Editor",
-  finance: "Keuangan",
-  crm: "Klien",
-  audit: "Riwayat",
-  settings: "Atur",
-};
+export type NavItem = NavModule;
 
 /** Urutan prioritas modul yang ditampilkan langsung di bilah bawah. */
 const PRIORITY = ["bookings", "finance", "editor", "crm", "audit", "settings"];
 
-const MENU_ICON = "M4 6h16M4 12h16M4 18h16";
-
-function isActivePath(pathname: string, href: string) {
-  return href === "/dashboard" ? pathname === "/dashboard" : pathname === href || pathname.startsWith(href + "/");
-}
+const MENU_ICON = "M4 6h16M4 12h10M4 18h16";
 
 /**
  * Bilah navigasi bawah (khusus layar HP, < 768px).
@@ -36,18 +22,18 @@ export default function BottomNav({
   isMenuOpen,
   onMenu,
 }: {
-  navItems: NavItem[];
+  navItems: NavModule[];
   pathname: string;
   isMenuOpen: boolean;
   onMenu: () => void;
 }) {
-  const byId = new Map(navItems.map((i) => [i.id, i]));
+  const byId = new Map(navItems.map((i) => [i.id as string, i]));
   const home = byId.get("dashboard");
   const create = byId.get("create");
-  const sides = PRIORITY.map((id) => byId.get(id)).filter((i): i is NavItem => !!i).slice(0, create ? 2 : 3);
+  const sides = PRIORITY.map((id) => byId.get(id)).filter((i): i is NavModule => !!i).slice(0, create ? 2 : 3);
 
   // Susunan slot: Beranda, sisi-1, [Buat], sisi-2, (sisi-3 bila tanpa Buat), Menu
-  const slots: Array<NavItem | "create"> = [];
+  const slots: Array<NavModule | "create"> = [];
   if (home) slots.push(home);
   if (sides[0]) slots.push(sides[0]);
   if (create) slots.push("create");
@@ -56,57 +42,55 @@ export default function BottomNav({
   const shownHrefs = [home, create, ...sides].filter(Boolean).map((i) => i!.href);
   const menuActive = isMenuOpen || !shownHrefs.some((h) => isActivePath(pathname, h));
 
+  const tab = (key: string, active: boolean, iconD: string, label: string, tint: string) => (
+    <>
+      <span
+        className={`relative flex items-center justify-center h-7 w-12 rounded-full transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+          active ? `${tint} scale-100` : "scale-90"
+        }`}
+      >
+        <Icon d={iconD} className="w-5 h-5" strokeWidth={active ? 2.3 : 1.8} />
+      </span>
+      <span key={key} className={`text-[10px] leading-none transition-colors ${active ? "font-bold text-foreground" : "font-medium"}`}>
+        {label}
+      </span>
+    </>
+  );
+
   return (
     <nav
       aria-label="Navigasi utama"
-      className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-[env(safe-area-inset-bottom)]"
+      className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/80 backdrop-blur-xl border-t border-border/60 shadow-[0_-8px_30px_-12px_rgba(79,70,229,0.18)] pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="flex items-stretch justify-around h-14 px-1">
+      <ul className="flex items-stretch justify-around h-[3.6rem] px-1">
         {slots.map((slot) => {
           if (slot === "create" && create) {
             const active = isActivePath(pathname, create.href);
             return (
               <li key="create" className="flex-1 flex justify-center">
-                <Link
-                  href={create.href}
-                  aria-label={create.name}
-                  aria-current={active ? "page" : undefined}
-                  className="-mt-5 flex flex-col items-center gap-0.5"
-                >
+                <Link href={create.href} aria-label={create.name} aria-current={active ? "page" : undefined} className="-mt-5 flex flex-col items-center gap-1 press">
                   <span
-                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg shadow-accent/30 ring-4 ring-background transition-transform active:scale-95 ${
-                      active ? "bg-accent-dark" : "bg-accent"
+                    className={`w-[3.25rem] h-[3.25rem] rounded-2xl bg-brand flex items-center justify-center text-white shadow-xl shadow-violet-500/40 ring-4 ring-background transition-transform duration-300 ${
+                      active ? "scale-105" : ""
                     }`}
                   >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={create.icon} />
-                    </svg>
+                    <Icon d={create.icon} className="w-6 h-6" strokeWidth={2.6} />
                   </span>
-                  <span className={`text-[10px] font-medium leading-none ${active ? "text-accent" : "text-foreground/60"}`}>
-                    {SHORT_LABEL.create}
-                  </span>
+                  <span className={`text-[10px] leading-none ${active ? "font-bold text-foreground" : "font-medium text-foreground/55"}`}>{create.short}</span>
                 </Link>
               </li>
             );
           }
-          const item = slot as NavItem;
+          const item = slot as NavModule;
           const active = !isMenuOpen && isActivePath(pathname, item.href);
           return (
             <li key={item.id} className="flex-1">
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`relative h-full flex flex-col items-center justify-center gap-1 transition-colors active:scale-95 ${
-                  active ? "text-accent" : "text-foreground/55"
-                }`}
+                className={`h-full flex flex-col items-center justify-center gap-1 press ${active ? "" : "text-foreground/50"}`}
               >
-                {active && <span className="absolute top-0 h-0.5 w-8 rounded-b-full bg-accent" />}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2.25 : 1.75} d={item.icon} />
-                </svg>
-                <span className={`text-[10px] leading-none ${active ? "font-semibold" : "font-medium"}`}>
-                  {SHORT_LABEL[item.id] || item.name}
-                </span>
+                {tab(item.id, active, item.icon, item.short, item.tint)}
               </Link>
             </li>
           );
@@ -118,15 +102,9 @@ export default function BottomNav({
             onClick={onMenu}
             aria-expanded={isMenuOpen}
             aria-label="Buka menu lainnya"
-            className={`relative w-full h-full flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 ${
-              menuActive ? "text-accent" : "text-foreground/55"
-            }`}
+            className={`w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer press ${menuActive ? "" : "text-foreground/50"}`}
           >
-            {menuActive && <span className="absolute top-0 h-0.5 w-8 rounded-b-full bg-accent" />}
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={menuActive ? 2.25 : 1.75} d={MENU_ICON} />
-            </svg>
-            <span className={`text-[10px] leading-none ${menuActive ? "font-semibold" : "font-medium"}`}>Menu</span>
+            {tab("menu", menuActive, MENU_ICON, "Menu", "text-accent bg-accent/12")}
           </button>
         </li>
       </ul>
