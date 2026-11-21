@@ -8,6 +8,8 @@ import { NotificationProvider } from "./NotificationProvider";
 import BottomNav from "./BottomNav";
 import { Icon } from "./ui";
 import { clearFirebaseBrowserState } from "@/lib/auth-client";
+import { auth } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
 import { NAV_MODULES, isActivePath, moduleForPath, type NavModule } from "@/lib/nav-modules";
 
 /**
@@ -107,12 +109,19 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("zeey_auth_role");
     localStorage.removeItem("zeey_auth_access");
     localStorage.removeItem("zeey_auth_user");
-    // Akhiri sesi Firebase agar akses Firestore ikut tertutup
-    const [{ auth }, { signOut }] = await Promise.all([import("@/lib/firebase"), import("firebase/auth")]);
-    await signOut(auth).catch(() => {});
-    // Bersihkan sisa sesi di browser agar akun berikutnya tidak mewarisi
-    // keadaan yang membuat koneksi Firestore gagal
-    await clearFirebaseBrowserState();
+
+    // Keluar akun tidak boleh pernah gagal: apa pun yang terjadi pada Firebase,
+    // sesi lokal sudah dibersihkan di atas dan pengguna tetap diantar ke halaman
+    // login. (Modul Firebase diimpor statis — memuatnya saat tombol ditekan
+    // bisa gagal dengan ChunkLoadError setelah aplikasi diperbarui.)
+    try {
+      await signOut(auth);
+      // Bersihkan sisa sesi di browser agar akun berikutnya tidak mewarisi
+      // keadaan yang membuat koneksi Firestore gagal
+      await clearFirebaseBrowserState();
+    } catch (err) {
+      console.error("Gagal mengakhiri sesi Firebase:", err);
+    }
     router.push("/");
   };
 

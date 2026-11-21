@@ -20,38 +20,43 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // 1. Check for Owner using Firebase Auth (Email/Password)
+      // 1. Coba sebagai Owner bila yang diketik berbentuk email (Firebase Auth).
+      //    Bila gagal JANGAN langsung berhenti: username admin boleh saja
+      //    berbentuk email, jadi alurnya diteruskan ke pemeriksaan admin di bawah.
+      let pesanOwner = "";
+      const { auth } = await import("@/lib/firebase");
       if (username.includes("@")) {
-        const { auth } = await import("@/lib/firebase");
         const { signInWithEmailAndPassword, signOut } = await import("firebase/auth");
+        let masukFirebase = true;
         try {
           await signInWithEmailAndPassword(auth, username, password);
         } catch {
-          setError("Email atau password salah.");
-          setIsLoading(false);
-          return;
+          masukFirebase = false;
+          pesanOwner = "Email atau password salah.";
         }
-        // Minta server memberi klaim peran "owner" (hanya untuk email di OWNER_EMAILS)
-        const user = auth.currentUser!;
-        const claimRes = await fetch("/api/auth/owner-claim", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
-        });
-        const claimData = await claimRes.json().catch(() => ({}));
-        if (!claimRes.ok || !claimData.success) {
-          await signOut(auth);
-          setError(claimData.error || "Akun ini tidak terdaftar sebagai Owner.");
-          setIsLoading(false);
-          return;
-        }
-        if (claimData.refresh) await user.getIdToken(true); // muat ulang token dengan klaim baru
 
-        localStorage.setItem("zeey_auth_role", "owner");
-        localStorage.setItem("zeey_auth_user", "Owner");
-        const { logActivity } = await import("@/lib/audit");
-        await logActivity("Login", "Owner berhasil masuk via Firebase Auth.");
-        router.push("/dashboard");
-        return;
+        if (masukFirebase) {
+          // Minta server memberi klaim peran "owner" (hanya untuk email di OWNER_EMAILS)
+          const user = auth.currentUser!;
+          const claimRes = await fetch("/api/auth/owner-claim", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+          });
+          const claimData = await claimRes.json().catch(() => ({}));
+          if (claimRes.ok && claimData.success) {
+            if (claimData.refresh) await user.getIdToken(true); // muat ulang token dengan klaim baru
+
+            localStorage.setItem("zeey_auth_role", "owner");
+            localStorage.setItem("zeey_auth_user", "Owner");
+            const { logActivity } = await import("@/lib/audit");
+            await logActivity("Login", "Owner berhasil masuk via Firebase Auth.");
+            router.push("/dashboard");
+            return;
+          }
+          // Bukan Owner — keluarkan lagi, lalu coba sebagai admin
+          await signOut(auth);
+          pesanOwner = claimData.error || "Akun ini tidak terdaftar sebagai Owner.";
+        }
       }
 
       // 2. Admin: diverifikasi di server (kata sandi di-hash, tidak dicocokkan dari browser)
@@ -64,7 +69,6 @@ export default function LoginPage() {
 
       if (res.ok && data.success) {
         // Masuk ke Firebase Auth dengan custom token berklaim peran & hak akses admin
-        const { auth } = await import("@/lib/firebase");
         const { signInWithCustomToken } = await import("firebase/auth");
         await signInWithCustomToken(auth, data.customToken);
         // Pastikan ID token sudah siap sebelum pindah ke dasbor. Tanpa ini
@@ -81,7 +85,7 @@ export default function LoginPage() {
         await logActivity("Login", `Admin ${data.name} berhasil masuk.`);
 router.push("/dashboard");
       } else {
-        setError(data.error || "Username atau password salah.");
+        setError(pesanOwner || data.error || "Username atau password salah.");
         setIsLoading(false);
       }
     } catch (err) {

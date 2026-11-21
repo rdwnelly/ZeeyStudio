@@ -22,9 +22,20 @@ export async function POST(request: Request) {
     }
 
     const db = adminDb();
-    const snap = await db.collection('admins').where('username', '==', String(username)).get();
+    const uname = String(username).trim();
 
-    for (const d of snap.docs) {
+    // Cocokkan persis dulu (kasus umum). Bila tidak ketemu, cocokkan dengan
+    // mengabaikan huruf besar/kecil dan spasi — akun lama bisa terlanjur
+    // tersimpan sebagai "Budi" atau "dewi " sehingga pemilik akun tidak bisa masuk.
+    const exact = await db.collection('admins').where('username', '==', uname).get();
+    let kandidat = exact.docs;
+    if (kandidat.length === 0) {
+      const semua = await db.collection('admins').get();
+      const target = uname.toLowerCase();
+      kandidat = semua.docs.filter((d) => String(d.data().username ?? '').trim().toLowerCase() === target);
+    }
+
+    for (const d of kandidat) {
       const a = d.data();
       let ok = false;
 

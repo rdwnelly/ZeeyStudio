@@ -467,8 +467,9 @@ export default function SettingsPage() {
     setIsAdminLoading(true);
 
     const adminPayload = {
-      username: adminForm.username,
-      name: adminForm.name,
+      // Dirapikan: spasi ikut tersimpan membuat admin tidak bisa login
+      username: adminForm.username.trim(),
+      name: adminForm.name.trim(),
       role: "admin",
       accesses: adminForm.accesses,
       commission: parseInt(adminForm.commission.toString().replace(/[^0-9]/g, "")) || 0,
